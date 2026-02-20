@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  name          String
+  role          String    @default("STAFF")
+  position      String    @default("STAFF")
+  restaurantId  String?
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id])
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLogin     DateTime?
+  auditLogs     AuditLog[]
+  notifications Notification[]
+}
+
+model Restaurant {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  location    String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users          User[]
+  deliveryData   DeliveryData[]
+}
+
+model DeliveryData {
+  id                    String   @id @default(uuid())
+  orderId               String   @unique
+  restaurantId          String
+  restaurant            Restaurant @relation(fields: [restaurantId], references: [id])
+
+  location              String
+  orderTime             DateTime
+  deliveryTime          DateTime
+  deliveryDuration      Int
+  orderMonth           String
+  orderHour            Int
+
+  pizzaSize             String
+  pizzaType             String
+  toppingsCount         Int
+  pizzaComplexity       Int
+  toppingDensity        Float?
+
+  distanceKm            Float
+  trafficLevel          String
+  trafficImpact        Int
+  isPeakHour           Boolean
+  isWeekend            Boolean
+
+  paymentMethod         String
+  paymentCategory       String
+  estimatedDuration     Float
+  deliveryEfficiency   Float?
+  delayMin             Float
+  isDelayed            Boolean
+
+  restaurantAvgTime     Float?
+
+  uploadedBy            String
+  uploadedAt           DateTime @default(now())
+  validatedAt          DateTime?
+  validatedBy          String?
+  qualityScore         Float?
+  version              Int      @default(1)
+
+  @@index([restaurantId])
+  @@index([orderTime])
+  @@index([orderMonth])
+  @@index([isDelayed])
+}
+
+model AuditLog {
+  id            String     @id @default(uuid())
+  userId        String?
+  user          User?      @relation(fields: [userId], references: [id])
+  action        String
+  entity        String
+  entityId      String?
+  restaurantId  String?
+  ipAddress     String?
+  userAgent     String?
+  timestamp     DateTime   @default(now())
+  details       String?
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([restaurantId])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  type        String
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Settings {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
+}
+
+model ForecastResult {
+  id              String   @id @default(uuid())
+  name            String
+  method          String
+  dateColumn      String
+  valueColumn     String
+  periods         Int
+  forecastData    String
+  historicalData  String?
+  createdAt       DateTime @default(now())
+  createdBy       String?
+
+  @@index([createdAt])
+  @@index([method])
+}
+
+model AnalyticsSummary {
+  id            String   @id @default(uuid())
+  type          String
+  data          String
+  period        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([type])
+}
