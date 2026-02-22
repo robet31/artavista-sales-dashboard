@@ -1,4 +1,4 @@
-# Adidas Sales Dashboard
+# Artavista Sales Dashboard
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status">
@@ -8,17 +8,19 @@
 
 ---
 
-A comprehensive sales dashboard built with **Next.js 16**, **FastAPI**, and **Supabase**.
+Aplikasi Sales Monitoring Dashboard berbasis web yang dibangun dengan **Next.js 16**, **FastAPI**, dan **Supabase**.
 
-## Features
+## ✨ Fitur Utama
 
-- **Sales Dashboard** - Interactive data visualization with ECharts
-- **Analytics** - Filter and analyze sales data by retailer, product, method, city, and month
-- **Forecasting** - Sales predictions using Holt-Winters method
-- **Data Upload** - Excel/CSV file upload with automatic data cleaning using Polars
-- **CRUD Operations** - Manage retailers, users, staff, and transactions
+- **Dashboard** - Visualisasi data penjualan interaktif dengan ECharts
+- **Analytics** - Filter dan analisis data berdasarkan retailer, produk, metode, kota, dan bulan
+- **Forecasting** - Prediksi penjualan menggunakan metode Holt-Winters
+- **Upload Data** - Import file Excel dengan automatic data cleaning menggunakan Polars
+- **AI Assistant** - Chatbot untuk mendapatkan insights dari data
+- **CRUD Operations** - Kelola retailer, user, staff, dan transaksi
+- **Notifications** - Notifikasi real-time dari chat AI
 
-## Tech Stack
+## 🛠️ Teknologi
 
 | Layer | Technology |
 |-------|------------|
@@ -29,9 +31,9 @@ A comprehensive sales dashboard built with **Next.js 16**, **FastAPI**, and **Su
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Cara Clone dan Run di Lokal
 
-### 1. Clone the Repository
+### 1. Clone Project
 
 ```bash
 git clone https://github.com/robet31/artavista-sales-dashboard.git
@@ -44,51 +46,50 @@ cd artavista-sales-dashboard
 npm install
 ```
 
-### 3. Configure Environment Variables
+### 3. Setup Environment Variables
 
 ```bash
-# Copy the example file
-cp .env.example .env.local
+# Copy file contoh
+copy .env.example .env.local    # Windows
+# cp .env.example .env.local   # Mac/Linux
 ```
 
-Edit `.env.local` with your Supabase configuration:
+Edit `.env.local` dengan konfigurasi Supabase Anda:
 
 ```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-
-# NextAuth
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-random-secret-key-min-32-chars
-
-# Backend URL
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJxxxxx
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+DATABASE_URL=postgresql+asyncpg://postgres.xxx:password@xxx.supabase.com:6543/postgres?pgbouncer=true
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=super-secret-key-change-in-production-123456789
+RAG_CONTEXT_TYPE=adidas
+OPENROUTER_API_KEY=sk-or-xxxxx
 ```
 
-For backend, copy `backend-fastapi/.env.example` to `.env`:
+### 4. Setup Database Supabase
 
-```bash
-cp backend-fastapi/.env.example backend-fastapi/.env
-```
+1. Buka **Supabase Dashboard** > **SQL Editor**
+2. Copy isi dari `supabase/seed-users.sql`
+3. Paste dan Run
 
-### 4. Run the Application
+### 5. Run Aplikasi
 
 ```bash
 npm run dev
 ```
 
-This will start:
-- Frontend at **http://localhost:3000**
-- Backend at **http://localhost:8000**
+Buka: **http://localhost:3000**
 
-### 5. Access the Dashboard
+---
 
-Open: **http://localhost:3000**
+## 🔑 Login Credentials
 
-Login credentials (example):
-- **Email:** `gm@adidas.id`
-- **Password:** `admin123`
+| Role | Email | Password |
+|------|-------|----------|
+| **GM (Admin)** | `gm@adidas.id` | `admin123` |
+| **Manager** | `manager.jakarta@adidas.id` | `admin123` |
+| **Staff** | `staff.jakarta@adidas.id` | `admin123` |
 
 ---
 
@@ -102,7 +103,7 @@ Login credentials (example):
 
 ---
 
-## 📂 Project Structure
+## 📂 Struktur Project
 
 ```
 artavista-sales-dashboard/
@@ -111,20 +112,17 @@ artavista-sales-dashboard/
 │   │   ├── (dashboard)/    # Dashboard pages
 │   │   └── api/            # API routes
 │   ├── components/          # React components
-│   │   └── charts/         # ECharts components
 │   └── lib/                # Utilities & services
 ├── backend-fastapi/         # FastAPI backend
-│   └── app/
-│       ├── routers/        # API endpoints
-│       └── main.py         # Entry point
-├── .env.example            # Frontend environment template
-├── backend-fastapi/.env.example  # Backend environment template
+├── public/                  # Static assets
+├── supabase/               # Database scripts
+├── SETUP_LOCALLY.md        # Panduan setup lengkap
 └── README.md               # This file
 ```
 
 ---
 
-## 🔧 Common Issues & Solutions
+## ❓ Troubleshooting
 
 ### Port Already in Use
 
@@ -132,56 +130,22 @@ artavista-sales-dashboard/
 # Windows
 netstat -ano | findstr :3000
 taskkill /PID <PID> /F
-
-# Mac/Linux
-lsof -i :3000
-kill -9 <PID>
 ```
 
-### Clean Install
+### Reinstall Dependencies
 
 ```bash
 rm -rf node_modules package-lock.json
 npm install
-
-# Backend
-cd backend-fastapi
-pip install -r requirements.txt
 ```
 
 ---
 
-## 📄 Environment Variables Reference
+## 🔐 Catatan Keamanan
 
-### Frontend (.env.local)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
-| `NEXTAUTH_URL` | Yes | Application base URL |
-| `NEXTAUTH_SECRET` | Yes | Random string for JWT |
-| `NEXT_PUBLIC_BACKEND_URL` | Yes | FastAPI backend URL |
-
-### Backend (backend-fastapi/.env)
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | Supabase PostgreSQL connection string |
-| `APP_NAME` | No | Application name |
-| `DEBUG` | No | Debug mode (true/false) |
-| `HOST` | No | Server host (default: 127.0.0.1) |
-| `PORT` | No | Server port (default: 8000) |
-| `CORS_ORIGINS` | No | Allowed CORS origins |
-
----
-
-## 🔐 Security Notes
-
-1. **Never commit** `.env.local` or `backend-fastapi/.env` files
-2. **Change** `NEXTAUTH_SECRET` in production
-3. **Update** Supabase credentials for production
-4. **Use** HTTPS in production
+1. **Jangan pernah commit** file `.env.local` ke GitHub
+2. **Ganti** `NEXTAUTH_SECRET` di environment production
+3. **Gunakan** HTTPS saat production
 
 ---
 
