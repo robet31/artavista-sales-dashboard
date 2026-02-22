@@ -6,6 +6,8 @@ import { signOut, useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { useState, useEffect, useRef } from 'react'
 import {
   LayoutDashboard,
   Upload,
@@ -16,34 +18,44 @@ import {
   Users,
   BarChart3,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  X,
+  Check
 } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
 
+interface Notification {
+  id: number
+  title: string
+  message: string
+  type: 'info' | 'success' | 'warning' | 'error'
+  read: boolean
+  date: string
+}
+
 const allNavigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['GM', 'ADMIN_PUSAT', 'MANAGER', 'ASMAN', 'ASISTEN_MANAGER', 'STAFF'] },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['GM', 'ADMIN_PUSAT', 'MANAGER'] },
-  { name: 'Upload Data', href: '/upload', icon: Upload, roles: ['GM', 'ADMIN_PUSAT', 'MANAGER', 'ASMAN', 'ASISTEN_MANAGER', 'STAFF'] },
-  { name: 'Data Order', href: '/orders', icon: ShoppingCart, roles: ['GM', 'ADMIN_PUSAT', 'MANAGER', 'ASMAN', 'ASISTEN_MANAGER', 'STAFF'] },
-  { name: 'Forecasting', href: '/forecasting', icon: TrendingUp, roles: ['GM', 'ADMIN_PUSAT'] },
-  { name: 'Rekomendasi', href: '/recommendation', icon: Sparkles, roles: ['GM', 'ADMIN_PUSAT'] },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['GM', 'MANAGER', 'STAFF'] },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3, roles: ['GM', 'MANAGER'] },
+  { name: 'Upload Data', href: '/upload', icon: Upload, roles: ['GM', 'MANAGER', 'STAFF'] },
+  { name: 'Data Transaksi', href: '/orders', icon: ShoppingCart, roles: ['GM', 'MANAGER'] },
+  { name: 'Forecasting', href: '/forecasting', icon: TrendingUp, roles: ['GM', 'MANAGER'] },
+  { name: 'Rekomendasi', href: '/recommendation', icon: Sparkles, roles: ['GM'] },
 ]
 
 const managerNavigation = [
-  { name: 'Kelola Staff', href: '/staff', icon: Users, roles: ['MANAGER', 'ASMAN', 'ASISTEN_MANAGER'] },
+  { name: 'Kelola Staff', href: '/staff', icon: Users, roles: ['MANAGER'] },
 ]
 
 const adminNavigation = [
-  { name: 'Restoran', href: '/restaurants', icon: Store, roles: ['GM', 'ADMIN_PUSAT'] },
-  { name: 'Manajemen User', href: '/users', icon: Users, roles: ['GM', 'ADMIN_PUSAT'] },
+  { name: 'Retailer', href: '/restaurants', icon: Store, roles: ['GM'] },
 ]
 
 function getRoleLabel(role: string | undefined) {
   switch (role) {
+    case 'GM': return 'GM'
+    case 'GENERAL_MANAGER': return 'GM'
     case 'MANAGER': return 'Manager'
-    case 'ASMAN': return 'Asst. Manager'
-    case 'ASISTEN_MANAGER': return 'Asst. Manager'
-    case 'ASST_MANAGER': return 'Asst. Manager'
+    case 'REGIONAL_MANAGER': return 'Manager'
     case 'STAFF': return 'Staff'
     default: return 'Staff'
   }
@@ -59,10 +71,26 @@ export function Sidebar({ className }: SidebarProps) {
   const router = useRouter()
 
   const userRole = (session?.user as any)?.role || (session?.user as any)?.position || 'STAFF'
-  const isAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
-  const isGM = userRole === 'GM'
-  const isManager = userRole === 'MANAGER' || userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER'
+  const isGM = userRole === 'GM' || userRole === 'GENERAL_MANAGER'
+  const isManager = userRole === 'MANAGER' || userRole === 'REGIONAL_MANAGER'
   const isStaff = userRole === 'STAFF'
+
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([
+    { id: 1, title: 'Data Baru', message: 'Data penjualan Adidas bulan terbaru sudah tersedia', type: 'info', read: false, date: '2 jam lalu' },
+    { id: 2, title: 'Forecast Selesai', message: 'Hasil prediksi penjualan sudah siap dilihat', type: 'success', read: false, date: '5 jam lalu' },
+    { id: 3, title: 'Reminder', message: 'Jangan lupa upload data terbaru setiap minggu', type: 'warning', read: true, date: '1 hari lalu' },
+  ])
+
+  const unreadCount = notifications.filter(n => !n.read).length
+
+  const markAsRead = (id: number) => {
+    setNotifications(notifications.map(n => n.id === id ? { ...n, read: true } : n))
+  }
+
+  const markAllAsRead = () => {
+    setNotifications(notifications.map(n => ({ ...n, read: true })))
+  }
 
   const handleLogout = async () => {
     await signOut({ redirect: false })
@@ -72,6 +100,24 @@ export function Sidebar({ className }: SidebarProps) {
   const filteredNavigation = allNavigation.filter(item => item.roles.includes(userRole))
   const filteredAdminNav = adminNavigation.filter(item => item.roles.includes(userRole))
   const filteredManagerNav = managerNavigation.filter(item => item.roles.includes(userRole))
+
+  const notificationRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setShowNotifications(false)
+      }
+    }
+
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showNotifications])
 
   return (
     <div
@@ -89,25 +135,11 @@ export function Sidebar({ className }: SidebarProps) {
         className="flex items-center gap-3 px-6 py-5 border-b"
         style={{ borderColor: 'var(--sidebar-border)' }}
       >
-        <img 
-          src="/sunest-logo.png" 
-          alt="Sunest Systems" 
-          className="w-10 h-10 rounded-lg object-contain"
+        <img
+          src="/Logo Artavista.png"
+          alt="Artavista"
+          className="w-48 h-auto rounded-lg object-contain"
         />
-        <div>
-          <h1
-            className="font-bold text-lg"
-            style={{ color: 'var(--sidebar-foreground)' }}
-          >
-            Sunest Systems
-          </h1>
-          <p
-            className="text-xs"
-            style={{ color: 'var(--muted-foreground)' }}
-          >
-            Delivery Monitoring
-          </p>
-        </div>
       </div>
 
       {/* Navigation */}
@@ -132,14 +164,14 @@ export function Sidebar({ className }: SidebarProps) {
           )
         })}
 
-        {(isAdmin || isManager) && (
+        {(isGM || isManager) && (
           <>
             <div className="pt-6 pb-2">
               <p
                 className="px-4 text-xs font-semibold uppercase tracking-wider"
                 style={{ color: 'var(--muted-foreground)' }}
               >
-                {(isManager && userRole === 'MANAGER') ? 'Manajemen' : (isManager && (userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER')) ? 'Manajemen' : 'Administration'}
+                {isGM ? 'Administration' : 'Manajemen'}
               </p>
             </div>
             {isManager && filteredManagerNav.map((item) => {
@@ -161,7 +193,7 @@ export function Sidebar({ className }: SidebarProps) {
                 </Link>
               )
             })}
-            {isAdmin && filteredAdminNav.map((item) => {
+            {isGM && filteredAdminNav.map((item) => {
               const isActive = pathname === item.href
               return (
                 <Link
@@ -225,13 +257,81 @@ export function Sidebar({ className }: SidebarProps) {
               {getRoleLabel((session?.user as any)?.position || (session?.user as any)?.role)}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            style={{ color: 'var(--muted-foreground)' }}
-          >
-            <Bell className="h-5 w-5" />
-          </Button>
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              style={{ color: 'var(--muted-foreground)' }}
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative"
+            >
+              <Bell className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </Button>
+
+            {showNotifications && (
+              <div ref={notificationRef} className="absolute -right-8 bottom-12 w-64 max-h-80 bg-white rounded-lg shadow-lg border z-50 overflow-hidden">
+                <div className="p-2 border-b bg-slate-50 flex items-center justify-between sticky top-0">
+                  <h3 className="font-semibold text-sm text-slate-800">Notifikasi</h3>
+                  <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="overflow-y-auto max-h-56">
+                  {notifications.length === 0 ? (
+                    <p className="p-4 text-center text-slate-500 text-sm">Tidak ada notifikasi</p>
+                  ) : (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`p-3 border-b hover:bg-blue-50 cursor-pointer ${!notif.read ? 'bg-blue-50' : ''}`}
+                        onClick={() => {
+                          markAsRead(notif.id)
+                          setShowNotifications(false)
+                          if (notif.title.includes('Forecast')) {
+                            router.push('/forecasting')
+                          } else if (notif.title.includes('Data') || notif.title.includes('upload')) {
+                            router.push('/upload')
+                          } else if (notif.title.includes('Rekomendasi')) {
+                            router.push('/recommendation')
+                          } else {
+                            router.push('/')
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${notif.type === 'info' ? 'bg-blue-500' :
+                              notif.type === 'success' ? 'bg-green-500' :
+                                notif.type === 'warning' ? 'bg-yellow-500' : 'bg-red-500'
+                            }`} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-xs text-slate-800 truncate">{notif.title}</p>
+                            <p className="text-xs text-slate-600 truncate">{notif.message}</p>
+                            <p className="text-xs text-slate-400">{notif.date}</p>
+                          </div>
+                          {!notif.read && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0 mt-1" />}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {notifications.some(n => !n.read) && (
+                  <div className="p-2 border-t bg-slate-50">
+                    <button
+                      onClick={markAllAsRead}
+                      className="w-full text-xs text-blue-600 hover:text-blue-800 flex items-center justify-center gap-1"
+                    >
+                      <Check className="h-3 w-3" /> Tandai semua dibaca
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <Button
           variant="outline"

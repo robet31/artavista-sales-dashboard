@@ -19,11 +19,17 @@ import {
   ArrowUpRight,
   Info,
   Loader2,
-  ChevronDown
+  ChevronDown,
+  Filter,
+  Pizza,
+  DollarSign,
+  Users
 } from 'lucide-react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // ==================== TOOLTIP CONTEXT ====================
 interface TooltipContextType {
@@ -82,7 +88,13 @@ interface DashboardStats {
   peakOffPeak: { peak: number; offPeak: number }
   avgDistanceKm: number
   avgDelayMin: number
+  avgMargin: number
   ordersByRestaurant: { label: string; value: number }[]
+  totalRevenue?: number
+  totalProfit?: number
+  avgOrderValue?: number
+  byCity?: { label: string; value: number }[]
+  byState?: { label: string; value: number }[]
 }
 
 const COLORS = {
@@ -97,10 +109,24 @@ const COLORS = {
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
 
 // ==================== INTERACTIVE BAR CHART ====================
-function InteractiveBarChart({ data, color = COLORS.primary }: { data: { label: string; value: number }[], color?: string }) {
+function InteractiveBarChart({ data, color = COLORS.primary, isCurrency = false }: { data: { label: string; value: number }[], color?: string, isCurrency?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { showTooltip, hideTooltip } = useTooltipContext()
   const hasAnimated = useRef(false)
+
+  const formatValue = (value: number, useCurrency?: boolean): string => {
+    const isCurr = useCurrency ?? isCurrency
+    if (value === undefined || value === null || isNaN(value)) return '0'
+    if (isCurr) {
+      if (value >= 1000000000) return `Rp ${(value / 1000000000).toFixed(1)} M`
+      if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(1)} JT`
+      if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)} RB`
+      return `Rp ${value.toFixed(0)}`
+    }
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)} Jt`
+    if (value >= 1000) return `${(value / 1000).toFixed(0)} Rb`
+    return value.toLocaleString('id-ID')
+  }
 
   useEffect(() => {
     if (!containerRef.current || !data.length) return
@@ -110,7 +136,7 @@ function InteractiveBarChart({ data, color = COLORS.primary }: { data: { label: 
     if (width === 0 || height === 0) return
 
     const svg = d3.select(container).append('svg').attr('width', width).attr('height', height)
-    const margin = { top: 20, right: 20, bottom: 60, left: 50 }
+    const margin = { top: 20, right: 20, bottom: 60, left: 60 }
     const innerWidth = width - margin.left - margin.right
     const innerHeight = height - margin.top - margin.bottom
     const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`)
@@ -138,35 +164,50 @@ function InteractiveBarChart({ data, color = COLORS.primary }: { data: { label: 
     g.selectAll('.label').data(data).enter().append('text')
       .attr('class', 'label').attr('x', d => (x(d.label) || 0) + x.bandwidth() / 2)
       .attr('y', d => y(d.value) - 5).attr('text-anchor', 'middle')
-      .style('font-size', '11px').style('font-weight', '600').style('fill', '#475569')
-      .style('opacity', 0).text(d => d.value)
+      .style('font-size', '10px').style('font-weight', '600').style('fill', '#475569')
+      .style('opacity', 0).text(d => formatValue(d.value, isCurrency))
       .transition().delay(600).duration(300).style('opacity', 1)
 
     g.append('g').attr('transform', `translate(0,${innerHeight})`).call(d3.axisBottom(x))
       .selectAll('text').attr('fill', '#64748b').style('font-size', '10px')
       .attr('transform', 'rotate(-35)').style('text-anchor', 'end')
-    g.append('g').call(d3.axisLeft(y).ticks(5)).selectAll('text').attr('fill', '#64748b').style('font-size', '10px')
+    g.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => formatValue(Number(d), isCurrency))).selectAll('text').attr('fill', '#64748b').style('font-size', '10px')
 
     bars.on('mouseenter', function(event: any, d: any) {
       d3.select(this).attr('opacity', 0.8)
       const percentage = ((d.value / data.reduce((sum, item) => sum + item.value, 0)) * 100).toFixed(1)
-      showTooltip(`${d.label}: ${d.value}`, `${percentage}% dari total`, event.clientX, event.clientY)
+      const valueStr = formatValue(d.value, true)
+      showTooltip(`${d.label}: ${valueStr}`, `${percentage}% dari total`, event.clientX, event.clientY)
     }).on('mouseleave', function() {
       d3.select(this).attr('opacity', 1)
       hideTooltip()
     })
 
     return () => { svg.remove() }
-  }, [data, color])
+  }, [data, color, isCurrency])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
 
 // ==================== INTERACTIVE LINE CHART ====================
-function InteractiveLineChart({ data, color = COLORS.primary }: { data: { label: string; value: number }[], color?: string }) {
+function InteractiveLineChart({ data, color = COLORS.primary, isCurrency = false }: { data: { label: string; value: number }[], color?: string, isCurrency?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { showTooltip, hideTooltip } = useTooltipContext()
   const hasAnimated = useRef(false)
+
+  const formatValue = (value: number, useCurrency?: boolean): string => {
+    const isCurr = useCurrency ?? isCurrency
+    if (value === undefined || value === null || isNaN(value)) return '0'
+    if (isCurr) {
+      if (value >= 1000000000) return `Rp ${(value / 1000000000).toFixed(1)} M`
+      if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(1)} JT`
+      if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)} RB`
+      return `Rp ${value.toFixed(0)}`
+    }
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)} Jt`
+    if (value >= 1000) return `${(value / 1000).toFixed(0)} Rb`
+    return value.toLocaleString('id-ID')
+  }
 
   useEffect(() => {
     if (!containerRef.current || !data.length) return
@@ -220,23 +261,29 @@ function InteractiveLineChart({ data, color = COLORS.primary }: { data: { label:
       .style('text-anchor', shouldRotate ? 'end' : 'middle')
       .each(function() {
         const label = d3.select(this).text()
-        if (label.length > 8 && !shouldRotate) {
+        // Format month labels (2024-01 -> Jan 24)
+        if (label.includes('-')) {
+          const [year, month] = label.split('-')
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+          const monthName = monthNames[parseInt(month) - 1] || month
+          d3.select(this).text(`${monthName} ${year.slice(2)}`)
+        } else if (label.length > 8 && !shouldRotate) {
           d3.select(this).text(label.substring(0, 6) + '...')
         }
       })
     
-    g.append('g').call(d3.axisLeft(y).ticks(5)).selectAll('text').attr('fill', '#64748b').style('font-size', '11px')
+    g.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(d => formatValue(Number(d)))).selectAll('text').attr('fill', '#64748b').style('font-size', '11px')
 
     g.selectAll('.dot').on('mouseenter', function(event: any, d: any) {
       d3.select(this).transition().duration(150).attr('r', 8)
-      showTooltip(`${d.label}`, `${d.value} pesanan`, event.clientX, event.clientY)
+      showTooltip(`${d.label}`, `${formatValue(d.value)}`, event.clientX, event.clientY)
     }).on('mouseleave', function() {
       d3.select(this).transition().duration(150).attr('r', 5)
       hideTooltip()
     })
 
     return () => { svg.remove() }
-  }, [data, color])
+  }, [data, color, isCurrency])
 
   return <div ref={containerRef} className="w-full h-full" />
 }
@@ -247,6 +294,13 @@ function InteractivePieChart({ data, colors }: { data: { label: string; value: n
   const { showTooltip, hideTooltip } = useTooltipContext()
   const hasAnimated = useRef(false)
   const defaultColors = CHART_COLORS
+
+  const formatValue = (value: number): string => {
+    if (value === undefined || value === null || isNaN(value)) return '0'
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)} Jt`
+    if (value >= 1000) return `${(value / 1000).toFixed(0)} Rb`
+    return value.toLocaleString('id-ID')
+  }
 
   useEffect(() => {
     if (!containerRef.current || !data.length) return
@@ -285,7 +339,7 @@ function InteractivePieChart({ data, colors }: { data: { label: string; value: n
 
     g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
       .style('font-size', '16px').style('font-weight', 'bold').style('fill', '#334155')
-      .text(total.toLocaleString())
+      .text(formatValue(total))
     g.append('text').attr('text-anchor', 'middle').attr('dy', '1.3em')
       .style('font-size', '11px').style('fill', '#64748b').text('Total')
 
@@ -294,7 +348,7 @@ function InteractivePieChart({ data, colors }: { data: { label: string; value: n
         return function() { return arcHover(d) || '' }
       })
       const percent = ((d.data.value / total) * 100).toFixed(1)
-      showTooltip(`${d.data.label}`, `${d.data.value} order (${percent}%)`, event.clientX, event.clientY)
+      showTooltip(`${d.data.label}`, `${formatValue(d.data.value)} (${percent}%)`, event.clientX, event.clientY)
     }).on('mouseleave', function(event: any, d: any) {
       d3.select(this).transition().duration(200).attrTween('d', function() {
         return function() { return arc(d) || '' }
@@ -467,6 +521,11 @@ function DashboardContent() {
   const router = useRouter()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
+  const [selectedSize, setSelectedSize] = useState<string>('all')
+  const [selectedPizzaType, setSelectedPizzaType] = useState<string>('all')
+  const [selectedPayment, setSelectedPayment] = useState<string>('all')
 
   const userRole = (session?.user as any)?.role || (session?.user as any)?.position || 'STAFF'
   const userName = session?.user?.name || ''
@@ -487,6 +546,32 @@ function DashboardContent() {
       .catch(() => setIsLoading(false))
   }, [])
 
+  const filterData = useCallback((data: { label: string; value: number }[]) => {
+    return data
+  }, [])
+
+  const formatCurrency = (value: number): string => {
+    if (value >= 1000000000) return `Rp ${(value / 1000000000).toFixed(1)} M`
+    if (value >= 1000000) return `Rp ${(value / 1000000).toFixed(1)} JT`
+    if (value >= 1000) return `Rp ${(value / 1000).toFixed(0)} RB`
+    return `Rp ${value.toFixed(0)}`
+  }
+
+  const formatNumber = (value: number): string => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)} M`
+    if (value >= 1000) return `${(value / 1000).toFixed(0)} RB`
+    return value.toLocaleString('id-ID')
+  }
+
+  const formatValue = (value: number, isCurrency: boolean = false): string => {
+    if (isCurrency) return formatCurrency(value)
+    return formatNumber(value)
+  }
+
+  const formatCurrencyFull = (value: number): string => {
+    return `Rp ${value.toLocaleString('id-ID')}`
+  }
+
   if (status === 'loading' || !allowedRoles.includes(userRole)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700">
@@ -505,20 +590,20 @@ function DashboardContent() {
       <div className="min-h-screen bg-slate-50">
         <div className="text-white p-6 md:p-8" style={{ background: 'linear-gradient(135deg, rgb(72, 148, 199) 0%, rgb(70, 147, 198) 100%)' }}>
           <div className="max-w-7xl mx-auto">
-            <h1 className="text-2xl md:text-3xl font-bold">Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Adidas Sales Dashboard</h1>
             <p className="mt-2 text-xs md:text-base" style={{ color: 'rgba(255,255,255,0.8)' }}>
-              Selamat datang, <span className="font-semibold text-white">{userName}</span>
+              Selamat datang, <span className="font-semibold text-white">{userName}</span> - {userRole}
             </p>
           </div>
         </div>
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-12">
           <div className="bg-white rounded-3xl shadow-xl p-12 text-center max-w-2xl mx-auto">
-            <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-3xl flex items-center justify-center mx-auto mb-6">
               <ShoppingCart className="w-12 h-12 text-blue-500" />
             </div>
             <h2 className="text-2xl font-bold text-slate-800 mb-3">Belum Ada Data</h2>
-            <p className="text-slate-500 mb-8 max-w-md mx-auto">Data delivery belum tersedia. Silakan upload data order terlebih dahulu.</p>
-            <Link href="/upload" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+            <p className="text-slate-500 mb-8 max-w-md mx-auto">Data penjualan Adidas belum tersedia. Silakan upload data penjualan terlebih dahulu.</p>
+            <Link href="/upload" className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors">
               Upload Data
               <ArrowUpRight className="w-5 h-5" />
             </Link>
@@ -531,7 +616,7 @@ function DashboardContent() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="text-white p-6 md:p-8" style={{ background: 'linear-gradient(135deg, rgb(72, 148, 199) 0%, rgb(70, 147, 198) 100%)' }}>
+      <div className="text-white p-6 md:p-8" style={{ background: 'linear-gradient(135deg, rgb(37, 99, 235) 0%, rgb(79, 70, 229) 100%)' }}>
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
@@ -539,7 +624,7 @@ function DashboardContent() {
                 <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
                   <TrendingUp className="w-6 h-6" />
                 </div>
-                Dashboard
+                Adidas Sales Dashboard
               </h1>
               <p className="mt-2 text-xs md:text-base" style={{ color: 'rgba(255,255,255,0.8)' }}>
                 Selamat datang, <span className="font-semibold text-white">{userName}</span>
@@ -553,133 +638,131 @@ function DashboardContent() {
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <KPICard 
-            title="Total Pesanan" 
-            value={stats?.totalOrders?.toLocaleString() || '0'} 
-            icon={<ShoppingCart className="w-6 h-6 text-white" />}
+            title="Total Revenue" 
+            value={formatCurrency(stats?.totalRevenue || 0)}
+            icon={<DollarSign className="w-6 h-6 text-white" />}
             isGradient={true}
-            subtext="Total order dalam periode"
-            insight={`Rata-rata ${Math.round((stats?.totalOrders || 0) / 30)} order/hari. Dihitung dari semua pesanan yang masuk ke sistem.`}
+            subtext="Total pendapatan"
+            insight={`Total revenue ${formatCurrencyFull(stats?.totalRevenue || 0)} dalam periode ini.`}
           />
 
           <KPICard 
-            title="Tepat Waktu" 
-            value={`${(stats?.onTimeRate || 0).toFixed(1)}`} 
-            unit="%"
-            icon={<CheckCircle className="w-6 h-6 text-green-600" />}
+            title="Total Units Terjual" 
+            value={(stats?.totalOrders || 0).toLocaleString()} 
+            icon={<ShoppingCart className="w-6 h-6 text-blue-600" />}
+            color="text-blue-600"
+            bgColor="bg-blue-50"
+            subtext="Total unit terjual"
+            insight={`${(stats?.totalOrders || 0).toLocaleString()} unit terjual dalam periode ini.`}
+          />
+
+          <KPICard 
+            title="Operating Profit" 
+            value={formatCurrency(stats?.totalProfit || 0)}
+            icon={<TrendingUp className="w-6 h-6 text-green-600" />}
             color="text-green-600"
             bgColor="bg-green-50"
-            subtext={`${stats?.delayedOrders || 0} pesanan terlambat`}
-            insight={`On-time rate menunjukkan persentase pesanan yang dikirim tepat waktu. Target industri adalah >85%. Rate saat ini ${(stats?.onTimeRate || 0) >= 85 ? 'sudah baik' : 'perlu ditingkatkan'}.`}
+            subtext="Total keuntungan operasi"
+            insight={`Total profit ${formatCurrencyFull(stats?.totalProfit || 0)} dengan margin ${(stats?.avgMargin || 0).toFixed(1)}%.`}
           />
 
           <KPICard 
-            title="Avg. Waktu Kirim" 
-            value={(stats?.avgDeliveryTime || 0).toFixed(1)} 
-            unit="menit"
-            icon={<Clock className="w-6 h-6 text-purple-600" />}
-            color="text-purple-600"
-            bgColor="bg-purple-50"
-            subtext="Rata-rata durasi pengiriman"
-            insight={`Waktu rata-rata dari order dibuat hingga pizza sampai di pelanggan. Standar industri adalah 30-45 menit.`}
-          />
-
-          <KPICard 
-            title="Avg. Jarak" 
-            value={(stats?.avgDistanceKm || 0).toFixed(1)} 
-            unit="km"
+            title="Rata-rata Order" 
+            value={formatCurrency(stats?.avgOrderValue || 0)}
             icon={<MapPin className="w-6 h-6 text-amber-600" />}
             color="text-amber-600"
             bgColor="bg-amber-50"
-            subtext="Jarak rata-rata pengiriman"
-            insight={`Rata-rata jarak tempuh pengiriman. Jarak mempengaruhi waktu delivery dan biaya operasional.`}
+            subtext="Nilai rata-rata per transaksi"
+            insight={`Rata-rata setiap transaksi bernilai ${formatCurrencyFull(stats?.avgOrderValue || 0)}.`}
           />
         </div>
 
-        {/* Charts Grid - General Overview */}
+        {/* Charts Grid - Adidas Data */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ChartCard
-            title="Tren Pesanan"
-            description="Visualisasi tren penjualan pizza dari waktu ke waktu"
-            insight={`Total pesanan ${stats?.totalOrders?.toLocaleString()} dengan rata-rata ${Math.round((stats?.totalOrders || 0) / 12)} per bulan.`}
-            recommendation="Rencanakan inventory dan staffing berdasarkan tren."
+            title="Tren Penjualan per Bulan"
+            description="Visualisasi total penjualan Adidas per bulan"
+            insight={`Total revenue ${formatCurrencyFull(stats?.totalRevenue || 0)} dari ${stats?.deliveryPerformance?.length || 0} bulan. Data menunjukkan tren penjualan per bulan.`}
+            recommendation="Rencanakan inventory dan staffing berdasarkan tren penjualan bulanan."
           >
             {stats?.deliveryPerformance?.length ? (
-              <InteractiveLineChart data={stats.deliveryPerformance} color={COLORS.primary} />
-            ) : <EmptyChart />}
+              <InteractiveBarChart data={stats.deliveryPerformance} color={COLORS.primary} isCurrency={true} />
+            ) : <EmptyChart message="Belum ada data penjualan" />}
           </ChartCard>
 
           <ChartCard
-            title="Performa Restoran"
-            description="Perbandingan jumlah pesanan antar restoran"
-            insight={`Tertinggi: ${Math.max(...(stats?.ordersByRestaurant?.map(r => r.value) || [0]))} pesanan.`}
-            recommendation="Evaluasi restoran dengan performa rendah."
+            title="Produk Terlaris"
+            description="Produk dengan jumlah unit terjual tertinggi"
+            insight={`Produk paling banyak terjual: ${stats?.pizzaSizes?.[0]?.label || '-'} dengan ${stats?.pizzaSizes?.[0]?.value || 0} unit. Terdapat ${stats?.pizzaSizes?.length || 0} jenis produk dengan total ${(stats?.pizzaSizes?.reduce((sum, p) => sum + p.value, 0) || 0).toLocaleString()} unit terjual.`}
+            recommendation="Pastikan stock untuk produk populer selalu tersedia dan pertimbangkan bundling."
           >
-            {stats?.ordersByRestaurant?.length ? (
-              <InteractiveBarChart data={stats.ordersByRestaurant} color={COLORS.primary} />
-            ) : <EmptyChart />}
+            {stats?.pizzaSizes?.length ? (
+              <InteractivePieChart data={stats.pizzaSizes} />
+            ) : <EmptyChart message="Belum ada data produk" />}
           </ChartCard>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
           <ChartCard
-            title="Distribusi Ukuran Pizza"
-            description="Preferensi ukuran pizza yang dipesan pelanggan"
-            insight={`Terpopuler: ${stats?.pizzaSizes?.sort((a, b) => b.value - a.value)[0]?.label || '-'} (${stats?.pizzaSizes?.sort((a, b) => b.value - a.value)[0]?.value || 0} pesanan).`}
-            recommendation="Pastikan stock untuk ukuran populer selalu tersedia."
-          >
-            {stats?.pizzaSizes?.length ? (
-              <InteractivePieChart data={stats.pizzaSizes} />
-            ) : <EmptyChart />}
-          </ChartCard>
-
-          <ChartCard
-            title="Jenis Pizza Populer"
-            description="Ranking pizza berdasarkan jumlah pesanan"
-            insight={`Terlaris: ${stats?.pizzaTypes?.sort((a, b) => b.value - a.value)[0]?.label || '-'}.`}
-            recommendation="Fokuskan marketing pada pizza terlaris."
+            title="Revenue per Produk"
+            description="Revenue berdasarkan produk (Top 6)"
+            insight={`Produk dengan revenue tertinggi: ${stats?.pizzaTypes?.[0]?.label || '-'} menghasilkan ${formatCurrency(stats?.pizzaTypes?.[0]?.value || 0)}. Total revenue dari semua produk adalah ${formatCurrencyFull(stats?.totalRevenue || 0)}.`}
+            recommendation="Fokuskan marketing pada produk dengan revenue tinggi untuk memaksimalkan keuntungan."
           >
             {stats?.pizzaTypes?.length ? (
-              <InteractivePieChart data={stats.pizzaTypes} colors={[COLORS.secondary, '#7c3aed', '#059669', '#dc2626', '#f59e0b', '#06b6d4']} />
-            ) : <EmptyChart />}
+              <InteractivePieChart data={stats.pizzaTypes.slice(0, 6)} colors={[COLORS.primary, COLORS.secondary, COLORS.accent, COLORS.warning, COLORS.danger, COLORS.cyan]} />
+            ) : <EmptyChart message="Belum ada data produk" />}
           </ChartCard>
 
           <ChartCard
-            title="Metode Pembayaran"
-            description="Preferensi pelanggan dalam metode pembayaran"
-            insight={`Terpopuler: ${stats?.paymentMethods?.sort((a, b) => b.value - a.value)[0]?.label || '-'} (${((stats?.paymentMethods?.sort((a, b) => b.value - a.value)[0]?.value || 0) / (stats?.totalOrders || 1) * 100).toFixed(1)}%).`}
-            recommendation="Pastikan sistem pembayaran utama berjalan lancer."
+            title="Metode Penjualan"
+            description="Distribusi metode penjualan yang digunakan"
+            insight={`Metode penjualan paling banyak digunakan: ${stats?.paymentMethods?.[0]?.label || '-'} dengan nilai ${formatCurrency(stats?.paymentMethods?.[0]?.value || 0)}. Terdapat ${stats?.paymentMethods?.length || 0} metode penjualan yang digunakan.`}
+            recommendation="Pastikan sistem untuk metode utama berjalan lancer dan pertimbangkan insentif untuk metode lain."
           >
             {stats?.paymentMethods?.length ? (
               <InteractivePieChart data={stats.paymentMethods} colors={[COLORS.accent, COLORS.primary, COLORS.warning, COLORS.danger, COLORS.cyan]} />
-            ) : <EmptyChart />}
+            ) : <EmptyChart message="Belum ada data metode" />}
+          </ChartCard>
+
+          <ChartCard
+            title="Top 5 Produk"
+            description="Produk dengan volume penjualan tertinggi (Top 5)"
+            insight={`Peringkat 1: ${stats?.pizzaSizes?.[0]?.label || '-'} (${stats?.pizzaSizes?.[0]?.value || 0} unit). Top 5 produk menyumbang ${((stats?.pizzaSizes?.slice(0, 5).reduce((sum, p) => sum + p.value, 0) || 0) / (stats?.pizzaSizes?.reduce((sum, p) => sum + p.value, 0) || 1) * 100).toFixed(1)}% dari total penjualan.`}
+            recommendation="Pastikan stock untuk 5 produk teratas selalu tersedia."
+          >
+            {stats?.pizzaSizes?.length ? (
+              <InteractiveBarChart data={stats.pizzaSizes.slice(0, 5)} color={COLORS.secondary} />
+            ) : <EmptyChart message="Belum ada data produk" />}
           </ChartCard>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
           <ChartCard
-            title="Jam Sibuk"
-            description="Analisis jam dengan volume pesanan tertinggi"
-            insight={`Puncak: ${stats?.peakHours?.sort((a, b) => b.value - a.value).slice(0, 3).map(h => h.label).join(', ') || '-'}`}
-            recommendation="Tingkatkan staffing pada jam sibuk."
+            title="Revenue per Kota"
+            description="Distribusi revenue berdasarkan kota (Top 10)"
+            insight={`Kota dengan revenue tertinggi: ${stats?.byCity?.[0]?.label || '-'} dengan ${formatCurrency(stats?.byCity?.[0]?.value || 0)}. ${stats?.byCity?.length || 0} kota berkontribusi pada total revenue ${formatCurrencyFull(stats?.totalRevenue || 0)}.`}
+            recommendation="Fokuskan ekspansi dan marketing di kota-kota dengan potensi tinggi."
           >
-            {stats?.peakHours?.length ? (
-              <InteractiveBarChart data={stats.peakHours} color={COLORS.warning} />
-            ) : <EmptyChart />}
+            {stats?.byCity?.length ? (
+              <InteractiveBarChart data={stats.byCity.slice(0, 10)} color={COLORS.warning} isCurrency={true} />
+            ) : <EmptyChart message="Belum ada data kota" />}
           </ChartCard>
 
           <ChartCard
-            title="Dampak Lalu Lintas"
-            description="Pengaruh kondisi lalu lintas terhadap pengiriman"
-            insight={`Tertinggi pada: ${stats?.trafficImpact?.sort((a, b) => b.value - a.value)[0]?.label || '-'} traffic.`}
-            recommendation="Gunakan untuk estimasi waktu pengiriman yang lebih akurat."
+            title="Revenue per Retailer"
+            description="Revenue per retailer (Top 10)"
+            insight={`Retailer dengan revenue tertinggi: ${stats?.ordersByRestaurant?.[0]?.label || '-'} dengan ${formatCurrency(stats?.ordersByRestaurant?.[0]?.value || 0)}. ${stats?.ordersByRestaurant?.length || 0} retailer berkontribusi pada penjualan.`}
+            recommendation="Evaluasi performa retailer secara berkala dan berikan insentif untuk retailer berprestise."
           >
-            {stats?.trafficImpact?.length ? (
-              <InteractiveBarChart data={stats.trafficImpact} color={COLORS.accent} />
-            ) : <EmptyChart />}
+            {stats?.ordersByRestaurant?.length ? (
+              <InteractiveBarChart data={stats.ordersByRestaurant.slice(0, 10)} color={COLORS.accent} isCurrency={true} />
+            ) : <EmptyChart message="Belum ada data retailer" />}
           </ChartCard>
         </div>
       </div>

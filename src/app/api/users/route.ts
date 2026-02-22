@@ -20,7 +20,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
     }
 
+    const { searchParams } = new URL(req.url)
+    const restaurantId = searchParams.get('restaurantId')
+
+    const whereClause = restaurantId ? { restaurantId } : {}
+
     const users = await prisma.user.findMany({
+      where: whereClause,
       select: {
         id: true,
         email: true,
@@ -44,7 +50,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json(users)
+    return NextResponse.json({ users })
   } catch (error) {
     console.error('Error fetching users:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

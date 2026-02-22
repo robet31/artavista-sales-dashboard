@@ -1,35 +1,50 @@
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 from .config import settings
 
-# For SQLite, add check_same_thread=False
-connect_args = {}
-if settings.database_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+# Support PostgreSQL from Supabase
+is_async = settings.database_url.startswith("postgresql")
 
-engine = create_engine(
-    settings.database_url,
-    connect_args=connect_args,
-    echo=settings.debug,
-)
+if is_async:
+    engine = create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+    )
+    AsyncSessionLocal = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    async def get_db():
+        async with AsyncSessionLocal() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+else:
+    connect_args = {}
+    if settings.database_url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+
+    engine = create_engine(
+        settings.database_url,
+        connect_args=connect_args,
+        echo=settings.debug,
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    def get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
 
 Base = declarative_base()
 
 
-def get_db():
-    """Dependency untuk mendapatkan database session"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def init_db():
-    """Initialize database - import all models here"""
-    from .models import User, Restaurant, DeliveryData
-
-    Base.metadata.create_all(bind=engine)
+    """Initialize database"""
+    pass

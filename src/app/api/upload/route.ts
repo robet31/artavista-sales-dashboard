@@ -1,8 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
-import { parseExcelFile, cleanseData, validateExcelHeaders } from '@/services/cleansing'
+import { supabase } from '@/lib/supabase'
+
+export async function GET(req: NextRequest) {
+  try {
+    const { data: transactionCount, error: countError } = await supabase
+      .from('transaction')
+      .select('*', { count: 'exact', head: true })
+
+    const { data: retailers, error: retailerError } = await supabase
+      .from('retailer')
+      .select('*')
+
+    const { data: recentData, error: recentError } = await supabase
+      .from('transaction')
+      .select('*, retailer(retailer_name), product(product), city(city)')
+      .order('invoice_date', { ascending: false })
+      .limit(5)
+
+    return NextResponse.json({
+      totalCount: transactionCount?.length || 0,
+      retailers: retailers || [],
+      recentData: recentData || []
+    })
+  } catch (error: any) {
+    console.error('API error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,169 +38,118 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
-    const userRestaurantId = (session.user as any)?.restaurantId
-    const userId = (session.user as any)?.id || session.user?.email || 'unknown'
+    const body = await req.json()
+    const cleanedData = body.cleanedData || []
 
-    const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
-    const isManagerOrStaff = userRole === 'MANAGER' || userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER' || userRole === 'STAFF'
-
-    const contentType = req.headers.get('content-type') || ''
-    
-    let restaurantId = ''
-    let cleansedData: any[] = []
-    let rawData: any[] = []
-
-    // Check if receiving JSON (already cleaned data from client)
-    if (contentType.includes('application/json')) {
-      const body = await req.json()
-      restaurantId = body.restaurantId
-      cleansedData = body.cleanedData || []
-      
-      console.log('Received cleaned data from client, count:', cleansedData.length)
-    } else {
-      // Old way: receive file and parse server-side
-      const formData = await req.formData()
-      const file = formData.get('file') as File
-      restaurantId = formData.get('restaurantId') as string
-
-      if (!file) {
-        return NextResponse.json({ error: 'File is required' }, { status: 400 })
-      }
-
-      // Convert file to buffer and parse
-      const bytes = await file.arrayBuffer()
-      const buffer = Buffer.from(bytes)
-      
-      try {
-        rawData = parseExcelFile(buffer)
-      } catch (parseError: any) {
-        return NextResponse.json({ 
-          error: 'Failed to parse Excel file',
-          details: parseError.message
-        }, { status: 400 })
-      }
-    }
-
-    // Validate restaurant
-    const assignedRestaurantId = userRestaurantId
-    
-    if (isManagerOrStaff && !assignedRestaurantId && !restaurantId) {
-      return NextResponse.json({ error: 'Pilih restoran terlebih dahulu' }, { status: 400 })
-    }
-
-    let targetRestaurantId = assignedRestaurantId || restaurantId
-
-    if (!targetRestaurantId) {
-      return NextResponse.json({ error: 'Restaurant tidak ditemukan' }, { status: 400 })
-    }
-
-    // Verify restaurant exists
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { id: targetRestaurantId }
-    })
-
-    if (!restaurant) {
-      return NextResponse.json({ error: 'Restaurant tidak ditemukan' }, { status: 404 })
-    }
-
-    // If rawData exists (old way), run server-side cleansing
-    let dataToSave = cleansedData
-    if (rawData.length > 0) {
-      const cleansed = cleanseData(rawData, targetRestaurantId, userId)
-      dataToSave = cleansed.data
-    }
-
-    if (dataToSave.length === 0) {
+    if (cleanedData.length === 0) {
       return NextResponse.json({
         success: false,
-        message: 'Tidak ada data yang valid',
-        data: { totalRows: rawData.length || cleansedData.length, validRows: 0, invalidRows: rawData.length || cleansedData.length, qualityScore: 0, errors: [] }
+        message: 'Tidak ada data untuk diupload',
+        data: { totalRows: 0, validRows: 0, invalidRows: 0, qualityScore: 0, errors: [] }
       }, { status: 400 })
     }
 
-    // Save to database
-    const successfullySaved = []
-    const failedRows = []
+    const userId = session.user?.email || 'unknown'
 
-    for (const row of dataToSave) {
-      try {
-        const orderId = row.orderId || `ORD${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-        
-        const dataToInsert = {
-          orderId: orderId,
-          restaurantId: targetRestaurantId,
-          location: row.location || '',
-          orderTime: row.orderTime ? new Date(row.orderTime) : new Date(),
-          deliveryTime: row.deliveryTime ? new Date(row.deliveryTime) : new Date(),
-          deliveryDuration: row.deliveryDuration || 0,
-          orderMonth: row.orderMonth || 'Unknown',
-          orderHour: row.orderHour || 0,
-          pizzaSize: row.pizzaSize || 'Unknown',
-          pizzaType: row.pizzaType || 'Unknown',
-          toppingsCount: row.toppingsCount || 0,
-          pizzaComplexity: row.pizzaComplexity || 0,
-          toppingDensity: row.toppingDensity || null,
-          distanceKm: row.distanceKm || 0,
-          trafficLevel: row.trafficLevel || 'Unknown',
-          trafficImpact: row.trafficImpact || 1,
-          isPeakHour: row.isPeakHour || false,
-          isWeekend: row.isWeekend || false,
-          paymentMethod: row.paymentMethod || 'Unknown',
-          paymentCategory: row.paymentCategory || 'Unknown',
-          estimatedDuration: row.estimatedDuration || 0,
-          deliveryEfficiency: row.deliveryEfficiency || null,
-          delayMin: row.delayMin || 0,
-          isDelayed: row.isDelayed || false,
-          restaurantAvgTime: row.restaurantAvgTime || null,
-          uploadedBy: userId,
-          uploadedAt: new Date(),
-          validatedAt: new Date(),
-          validatedBy: userId,
-          qualityScore: row.qualityScore || 0,
-          version: 1
-        }
+    // Get master data IDs from Supabase
+    const { data: retailers } = await supabase.from('retailer').select('id_retailer, retailer_name')
+    const { data: products } = await supabase.from('product').select('id_product, product')
+    const { data: methods } = await supabase.from('method').select('id_method, method')
+    const { data: cities } = await supabase.from('city').select('id_city, city')
 
-        await prisma.deliveryData.upsert({
-          where: { orderId: orderId },
-          update: { ...dataToInsert, version: { increment: 1 } },
-          create: dataToInsert
-        })
-        
-        successfullySaved.push(row)
-      } catch (error: any) {
-        console.error('Error saving row:', error.message)
-        failedRows.push({ orderId: row.orderId, error: error.message })
+    // Helper functions
+    const getRetailerId = (name: string) => {
+      if (!retailers) return null
+      const found = retailers.find(r => r.retailer_name?.toLowerCase() === name?.toLowerCase())
+      return found?.id_retailer || null
+    }
+
+    const getProductId = (name: string) => {
+      if (!products) return null
+      const found = products.find(p => p.product?.toLowerCase() === name?.toLowerCase())
+      return found?.id_product || null
+    }
+
+    const getMethodId = (name: string) => {
+      if (!methods || !name) return null
+      const found = methods.find(m => m.method?.toLowerCase() === name?.toLowerCase())
+      return found?.id_method || null
+    }
+
+    const getCityId = (name: string) => {
+      if (!cities || !name) return null
+      const found = cities.find(c => c.city?.toLowerCase() === name?.toLowerCase())
+      return found?.id_city || null
+    }
+
+    // Create upload history
+    const { data: uploadRecord } = await supabase
+      .from('upload_history')
+      .insert([{
+        file_name: 'uploaded_file.xlsx',
+        system_name: 'adidas_sales',
+        status: 'processing',
+        total_rows: cleanedData.length,
+        uploaded_by: userId,
+        uploaded_date: new Date().toISOString()
+      }])
+      .select()
+      .single()
+
+    const uploadId = uploadRecord?.id_upload
+
+    // Transform and insert transactions - using new field names from cleaning service
+    const transactions = cleanedData.map((row: any) => ({
+      id_retailer: getRetailerId(row.retailer) || 1,
+      id_product: getProductId(row.product) || 1,
+      id_method: getMethodId(row.sales_method),
+      id_city: getCityId(row.city) || 1,
+      id_upload: uploadId,
+      invoice_date: row.invoice_date ? new Date(row.invoice_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      price_per_unit: parseFloat(row.price_per_unit) || 0,
+      unit_sold: parseInt(row.units_sold) || 1,
+      total_sales: parseFloat(row.total_sales) || 0,
+      operating_profit: parseFloat(row.operating_profit) || 0,
+      operating_margin: parseFloat(row.operating_margin) || 0
+    })).filter((t: any) => t.total_sales > 0)
+
+    // Insert in batches
+    const batchSize = 100
+    let successfullySaved = 0
+    let failedRows = 0
+
+    for (let i = 0; i < transactions.length; i += batchSize) {
+      const batch = transactions.slice(i, i + batchSize)
+      const { error } = await supabase.from('transaction').insert(batch)
+      
+      if (error) {
+        console.error('Supabase insert error:', error)
+        failedRows += batch.length
+      } else {
+        successfullySaved += batch.length
       }
     }
 
-    // Log audit
-    try {
-      await prisma.auditLog.create({
-        data: {
-          userId: userId,
-          action: 'UPLOAD_DATA',
-          entity: 'DeliveryData',
-          restaurantId: targetRestaurantId,
-          details: `Uploaded ${successfullySaved.length} records`,
-          ipAddress: req.headers.get('x-forwarded-for') || 'unknown'
-        }
-      })
-    } catch (auditError) {
-      console.error('Audit log error:', auditError)
+    // Update upload history status
+    if (uploadId) {
+      await supabase
+        .from('upload_history')
+        .update({ 
+          status: failedRows > 0 ? 'partial' : 'success',
+          note: `Saved: ${successfullySaved}, Failed: ${failedRows}`
+        })
+        .eq('id_upload', uploadId)
     }
-
-    console.log('Upload complete - saved:', successfullySaved.length, 'failed:', failedRows.length)
 
     return NextResponse.json({
       success: true,
-      message: `Berhasil upload ${successfullySaved.length} dari ${dataToSave.length} baris data`,
+      message: `Berhasil upload ${successfullySaved} dari ${cleanedData.length} baris data`,
       data: {
-        totalRows: dataToSave.length,
-        validRows: successfullySaved.length,
-        invalidRows: failedRows.length,
-        qualityScore: successfullySaved.length > 0 ? 100 : 0,
-        errors: failedRows.slice(0, 20)
+        totalRows: cleanedData.length,
+        validRows: successfullySaved,
+        invalidRows: failedRows,
+        qualityScore: successfullySaved > 0 ? 100 : 0,
+        errors: []
       },
       lastUpdate: new Date().toISOString()
     })
@@ -182,28 +157,5 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Upload error:', error)
     return NextResponse.json({ error: 'Internal server error', message: error.message }, { status: 500 })
-  }
-}
-
-export async function GET(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
-    const userRestaurantId = (session.user as any)?.restaurantId
-    const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
-
-    let whereClause: any = {}
-    if (!isSuperAdmin && userRestaurantId) whereClause.restaurantId = userRestaurantId
-
-    const restaurants = await prisma.restaurant.findMany({
-      where: isSuperAdmin ? {} : { id: userRestaurantId },
-      orderBy: { name: 'asc' }
-    })
-
-    return NextResponse.json(restaurants)
-  } catch (error) {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

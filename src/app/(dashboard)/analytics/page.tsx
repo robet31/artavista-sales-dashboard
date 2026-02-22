@@ -63,14 +63,17 @@ interface Restaurant {
 
 interface AnalyticsData {
   totalOrders: number
-  ordersByRestaurant: { restaurant: string; count: number }[]
+  ordersByRestaurant: { restaurant: string; count: number; sales?: number }[]
+  ordersByProduct: { product: string; count: number; sales?: number }[]
   ordersBySize: { size: string; count: number }[]
   ordersByType: { type: string; count: number }[]
-  ordersByMonth: { month: string; count: number }[]
-  ordersByLocation: { location: string; count: number }[]
+  ordersByMonth: { month: string; count: number; sales?: number }[]
+  ordersByLocation: { location: string; count: number; sales?: number }[]
+  ordersByMethod: { method: string; count: number; sales?: number }[]
   delayStats: { onTime: number; delayed: number; rate: number }
   peakHourStats: { hour: number; count: number }[]
   paymentStats: { method: string; count: number }[]
+  salesStats: { total: number; profit: number; avgOrderValue: number }
 }
 
 interface FilterState {
@@ -92,6 +95,29 @@ const COLORS = {
 }
 
 const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316']
+
+// ==================== NUMBER FORMATTER ====================
+function formatNumber(num: number): string {
+  if (num >= 1000000000) {
+    return (num / 1000000000).toFixed(1) + 'M'
+  } else if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'Jt'
+  } else if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'Rb'
+  }
+  return num.toLocaleString('id-ID')
+}
+
+function formatCurrency(num: number): string {
+  if (num >= 1000000000) {
+    return 'Rp ' + (num / 1000000000).toFixed(1) + 'M'
+  } else if (num >= 1000000) {
+    return 'Rp ' + (num / 1000000).toFixed(1) + 'Jt'
+  } else if (num >= 1000) {
+    return 'Rp ' + (num / 1000).toFixed(0) + 'Rb'
+  }
+  return 'Rp ' + num.toLocaleString('id-ID')
+}
 
 // ==================== SLICER COMPONENT ====================
 function DataSlicer({ 
@@ -155,45 +181,49 @@ function DataSlicer({
         <div className="p-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Bulan</label>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Bulan Transaksi</label>
+              <p className="text-[10px] text-slate-400">Filter data berdasarkan bulan</p>
               <Select value={filters.month} onValueChange={(value) => setFilters(prev => ({ ...prev, month: value }))}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Semua Bulan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Bulan</SelectItem>
-                  {months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  {months?.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Ukuran Pizza</label>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Produk</label>
+              <p className="text-[10px] text-slate-400">Filter berdasarkan jenis produk</p>
               <Select value={filters.pizzaSize} onValueChange={(value) => setFilters(prev => ({ ...prev, pizzaSize: value }))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Semua Ukuran" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Semua Produk" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Ukuran</SelectItem>
-                  {pizzaSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  <SelectItem value="all">Semua Produk</SelectItem>
+                  {pizzaSizes?.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Jenis Pizza</label>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Kota</label>
+              <p className="text-[10px] text-slate-400">Filter berdasarkan kota</p>
               <Select value={filters.pizzaType} onValueChange={(value) => setFilters(prev => ({ ...prev, pizzaType: value }))}>
-                <SelectTrigger className="w-full"><SelectValue placeholder="Semua Jenis" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Semua Kota" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Jenis</SelectItem>
-                  {pizzaTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  <SelectItem value="all">Semua Kota</SelectItem>
+                  {pizzaTypes?.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Pembayaran</label>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Metode Penjualan</label>
+              <p className="text-[10px] text-slate-400">Filter berdasarkan cara penjualan</p>
               <Select value={filters.paymentMethod} onValueChange={(value) => setFilters(prev => ({ ...prev, paymentMethod: value }))}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Semua Metode" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Metode</SelectItem>
-                  {paymentMethods.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  {paymentMethods?.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -338,7 +368,7 @@ function InteractiveLineChart({ data, color = COLORS.primary }: { data: { label:
 
     g.selectAll('.dot').on('mouseenter', function(event: any, d: any) {
       d3.select(this).transition().duration(150).attr('r', 8)
-      showTooltip(`${d.label}`, `${d.value} pesanan`, event.clientX, event.clientY)
+      showTooltip(`${d.label}`, `${d.value} transaksi`, event.clientX, event.clientY)
     }).on('mouseleave', function() {
       d3.select(this).transition().duration(150).attr('r', 5)
       hideTooltip()
@@ -394,7 +424,7 @@ function InteractivePieChart({ data, colors }: { data: { label: string; value: n
 
     g.append('text').attr('text-anchor', 'middle').attr('dy', '-0.2em')
       .style('font-size', '16px').style('font-weight', 'bold').style('fill', '#334155')
-      .text(total.toLocaleString())
+      .text(formatNumber(total))
     g.append('text').attr('text-anchor', 'middle').attr('dy', '1.3em')
       .style('font-size', '11px').style('fill', '#64748b').text('Total')
 
@@ -623,8 +653,8 @@ function AnalyticsContent() {
     const csvData = [
       ['Metrik', 'Nilai'].join(','),
       ['Total Orders', filteredData.totalOrders].join(','),
-      ['On Time Rate', filteredData.delayStats.rate].join(','),
-      ['Delayed Orders', filteredData.delayStats.delayed].join(','),
+      ['On Time Rate', filteredData.delayStats?.rate || 0].join(','),
+      ['Delayed Orders', filteredData.delayStats?.delayed || 0].join(','),
       ...filteredData.ordersByMonth.map(d => ['Orders ' + d.month, d.count].join(',')),
       ...filteredData.ordersBySize.map(d => ['Size ' + d.size, d.count].join(',')),
     ].join('\n')
@@ -699,13 +729,13 @@ function AnalyticsContent() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">Analytics & Insights</h1>
-            <p className="text-slate-500">Analisis data delivery pizza dengan insights actionable</p>
+            <p className="text-slate-500">Analisis data penjualan Adidas dengan insights actionable</p>
           </div>
           {isSuperAdmin && restaurants.length > 0 && (
             <Select value={selectedRestaurant} onValueChange={setSelectedRestaurant}>
               <SelectTrigger className="w-64"><SelectValue placeholder="Pilih restoran" /></SelectTrigger>
               <SelectContent>
-                {restaurants.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.code})</SelectItem>)}
+                {restaurants?.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.code})</SelectItem>)}
               </SelectContent>
             </Select>
           )}
@@ -714,7 +744,7 @@ function AnalyticsContent() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <TrendingUp className="h-16 w-16 mb-4 opacity-30 text-slate-400" />
             <h3 className="text-lg font-semibold mb-2 text-slate-800">Belum Ada Data</h3>
-            <p className="text-center mb-6 max-w-md text-slate-500">Data delivery belum tersedia. Silakan upload data order terlebih dahulu.</p>
+            <p className="text-center mb-6 max-w-md text-slate-500">Data penjualan belum tersedia. Silakan upload data transaksi terlebih dahulu.</p>
             <Link href="/upload" className="flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
               <Upload className="w-5 h-5" />
               Upload Data
@@ -726,9 +756,17 @@ function AnalyticsContent() {
   }
 
   const getPeakHour = () => {
-    if (!data?.peakHourStats?.length) return '-'
-    const sorted = [...data.peakHourStats].sort((a, b) => b.count - a.count)
-    return sorted[0]?.hour !== undefined ? `${sorted[0].hour}:00` : '-'
+    if (!data?.ordersByMonth?.length) return '-'
+    const sorted = [...data.ordersByMonth].sort((a: any, b: any) => (b.sales || 0) - (a.sales || 0))
+    return sorted[0]?.month || '-'
+  }
+
+  const getTotalRevenue = () => {
+    return data.ordersByMonth?.reduce((sum: number, m: any) => sum + (m.sales || 0), 0) || 0
+  }
+
+  const getTotalProfit = () => {
+    return data.ordersByProduct?.reduce((sum: number, p: any) => sum + (p.sales || 0), 0) || 0
   }
 
   return (
@@ -737,14 +775,14 @@ function AnalyticsContent() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Analytics & Insights</h1>
-          <p className="text-slate-500">Analisis mendalam data delivery pizza</p>
+          <p className="text-slate-500">Analisis mendalam data penjualan Adidas</p>
         </div>
         <div className="flex items-center gap-3">
           {isSuperAdmin && restaurants.length > 0 && (
             <Select value={selectedRestaurant} onValueChange={setSelectedRestaurant}>
               <SelectTrigger className="w-64"><SelectValue placeholder="Pilih restoran" /></SelectTrigger>
               <SelectContent>
-                {restaurants.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.code})</SelectItem>)}
+                {restaurants?.map(r => <SelectItem key={r.id} value={r.id}>{r.name} ({r.code})</SelectItem>)}
               </SelectContent>
             </Select>
           )}
@@ -777,50 +815,48 @@ function AnalyticsContent() {
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2 font-semibold text-blue-700">
-              <TrendingUp className="w-4 h-4" /> Total Pesanan
+              <TrendingUp className="w-4 h-4" /> Total Transaksi
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-blue-800">{data.totalOrders.toLocaleString()}</p>
-            <p className="text-xs text-blue-600/70 mt-1">Berdasarkan filter aktif</p>
+            <p className="text-xs text-blue-600/70 mt-1">Unit terjual</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2 font-semibold text-emerald-700">
-              <CheckCircle2 className="w-4 h-4" /> Tepat Waktu
+              <CheckCircle2 className="w-4 h-4" /> Total Revenue
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-emerald-800">{data.delayStats.rate.toFixed(1)}%</p>
-            <p className="text-xs text-emerald-600/70 mt-1">
-              {data.delayStats.onTime.toLocaleString()} pesanan</p>
+            <p className="text-3xl font-bold text-emerald-800">{getTotalRevenue() > 1000000 ? `Rp ${(getTotalRevenue() / 1000000).toFixed(1)} JT` : `Rp ${(getTotalRevenue() / 1000).toFixed(0)} RB`}</p>
+            <p className="text-xs text-emerald-600/70 mt-1">Total penjualan</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2 font-semibold text-rose-700">
-              <AlertTriangle className="w-4 h-4" /> Terlambat
+              <AlertTriangle className="w-4 h-4" /> Total Profit
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-rose-800">{data.delayStats.delayed.toLocaleString()}</p>
-            <p className="text-xs text-rose-600/70 mt-1">
-              {data.totalOrders > 0 ? ((data.delayStats.delayed / data.totalOrders) * 100).toFixed(1) : 0}% dari total</p>
+            <p className="text-3xl font-bold text-rose-800">{getTotalProfit() > 1000000 ? `Rp ${(getTotalProfit() / 1000000).toFixed(1)} JT` : `Rp ${(getTotalProfit() / 1000).toFixed(0)} RB`}</p>
+            <p className="text-xs text-rose-600/70 mt-1">Estimasi keuntungan (20%)</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-violet-50 to-violet-100 border-violet-200">
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2 font-semibold text-violet-700">
-              <Clock className="w-4 h-4" /> Jam Sibuk
+              <Clock className="w-4 h-4" /> Bulan Tertinggi
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold text-violet-800">{getPeakHour()}</p>
-            <p className="text-xs text-violet-600/70 mt-1">Puncak pesanan</p>
+            <p className="text-xs text-violet-600/70 mt-1">Bulan dengan penjualan tertinggi</p>
           </CardContent>
         </Card>
       </div>
@@ -828,100 +864,144 @@ function AnalyticsContent() {
       {/* Charts Grid - Row 1: Trend & Restaurant */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard 
-          title="Tren Pesanan per Bulan"
-          description="Visualisasi tren penjualan pizza dari waktu ke waktu"
-          insight={`Bulan ini ada ${data.ordersByMonth[data.ordersByMonth.length - 1]?.count || 0} pesanan. ${data.ordersByMonth.length > 1 ? (data.ordersByMonth[data.ordersByMonth.length - 1].count > data.ordersByMonth[0].count ? 'Tren positif 📈' : 'Tren perlu perhatian 📉') : 'Data belum cukup untuk analisis'}.`}
-          recommendation="Pastikan stock bahan baku mencukupi. Pertimbangkan promo pada bulan dengan penjualan rendah."
+          title="Tren Penjualan per Bulan"
+          description="Visualisasi total penjualan (dalam Rupiah) Adidas dari waktu ke waktu"
+          insight={data.ordersByMonth && data.ordersByMonth.length > 0 
+            ? `Bulan dengan penjualan tertinggi: ${data.ordersByMonth.sort((a, b) => (b.sales || 0) - (a.sales || 0))[0]?.month || '-'} (${formatCurrency(data.ordersByMonth.sort((a, b) => (b.sales || 0) - (a.sales || 0))[0]?.sales || 0)}). Total seluruh bulan: ${formatCurrency(data.salesStats?.total || 0)}.`
+            : 'Belum ada data penjualan.'}
+          recommendation="Pastikan stock barang mencukupi. Pertimbangkan promo pada bulan dengan penjualan rendah."
         >
           <InteractiveLineChart 
-            data={data.ordersByMonth.map(d => ({ label: d.month.slice(0, 3), value: d.count }))} 
+            data={data.ordersByMonth?.map(d => ({ label: d.month.slice(0, 7), value: d.sales || 0 })) || []} 
             color="#f97316"
           />
         </ChartCard>
 
-        {showRestaurantComparison && data.ordersByRestaurant.length > 0 && (
+        {showRestaurantComparison && data.ordersByRestaurant && data.ordersByRestaurant.length > 0 && (
           <ChartCard 
-            title="Performa Restoran"
-            description="Perbandingan jumlah pesanan antar restoran"
-            insight={`Restoran terbaik: ${data.ordersByRestaurant.sort((a, b) => b.count - a.count)[0]?.restaurant || '-'} (${data.ordersByRestaurant.sort((a, b) => b.count - a.count)[0]?.count || 0} pesanan).`}
-            recommendation="Evaluasi restoran dengan pesanan rendah dan tiru strategi dari restoran terbaik."
+            title="Performa Retailer"
+            description="Perbandingan jumlah transaksi antar retailer"
+            insight={`Retailer terbaik: ${data.ordersByRestaurant.sort((a: any, b: any) => b.count - a.count)[0]?.restaurant || '-'} (${data.ordersByRestaurant.sort((a: any, b: any) => b.count - a.count)[0]?.count || 0} transaksi).`}
+            recommendation="Evaluasi retailer dengan transaksi rendah dan tiru strategi dari retailer terbaik."
           >
             <InteractiveBarChart 
-              data={data.ordersByRestaurant.map(d => ({ label: d.restaurant, value: d.count }))} 
+              data={data.ordersByRestaurant?.map(d => ({ label: d.restaurant, value: d.count })) || []} 
               color="#3b82f6"
             />
           </ChartCard>
         )}
       </div>
 
-      {/* Charts Grid - Row 2: Pizza Stats (3 columns) */}
+      {/* Charts Grid - Row 2: Product Stats (3 columns) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <ChartCard 
-          title="Distribusi Ukuran Pizza"
-          description="Preferensi ukuran pizza yang dipesan pelanggan"
-          insight={`Ukuran favorit: ${data.ordersBySize[0]?.size || '-'} (${data.ordersBySize[0]?.count || 0} pesanan).`}
-          recommendation="Pastikan stock bahan untuk ukuran populer selalu tersedia."
+          title="Distribusi Produk"
+          description="Jumlah unit terjual berdasarkan produk"
+          insight={`Produk paling banyak terjual: ${data.ordersByProduct?.[0]?.product || '-'} (${data.ordersByProduct?.[0]?.count || 0} unit).`}
+          recommendation="Pastikan stock untuk produk terlaris selalu tersedia."
         >
-          <InteractivePieChart data={data.ordersBySize.map(d => ({ label: d.size, value: d.count }))} />
+          <InteractivePieChart data={data.ordersByProduct?.map(d => ({ label: d.product, value: d.count })) || []} />
         </ChartCard>
 
         <ChartCard 
-          title="Jenis Pizza Populer"
-          description="Ranking pizza berdasarkan jumlah pesanan"
-          insight={`Terlaris: ${data.ordersByType[0]?.type || '-'}. Tidak laku: ${data.ordersByType[data.ordersByType.length - 1]?.type || '-'}.`}
-          recommendation="Fokuskan marketing pada pizza terlaris."
+          title="Produk Terlaris"
+          description="Produk dengan revenue tertinggi (Total Sales)"
+          insight={`Revenue tertinggi: ${data.ordersByProduct?.sort((a, b) => (b.sales || 0) - (a.sales || 0))[0]?.product || '-'}. Total revenue: ${formatCurrency(data.ordersByProduct?.sort((a, b) => (b.sales || 0) - (a.sales || 0))[0]?.sales || 0)}.`}
+          recommendation="Fokuskan marketing pada produk dengan revenue tinggi."
         >
           <InteractivePieChart 
-            data={data.ordersByType.map(d => ({ label: d.type, value: d.count }))} 
+            data={data.ordersByProduct?.slice(0, 5).map(d => ({ label: d.product, value: d.sales || 0 })) || []} 
             colors={['#2563eb', '#7c3aed', '#059669', '#dc2626', '#f59e0b', '#06b6d4']}
           />
         </ChartCard>
 
         <ChartCard 
-          title="Metode Pembayaran"
-          description="Preferensi pelanggan dalam metode pembayaran"
-          insight={`Paling populer: ${data.paymentStats[0]?.method || '-'}.`}
-          recommendation="Pastikan sistem pembayaran utama selalu berjalan lancer."
+          title="Top 5 Kota"
+          description="Kota dengan penjualan tertinggi"
+          insight={`Kota dengan penjualan tertinggi: ${data.ordersByLocation?.[0]?.location || '-'} dengan total ${formatCurrency(data.ordersByLocation?.[0]?.sales || 0)}.`}
+          recommendation="Fokuskan ekspansi di kota-kota dengan potensi tinggi."
         >
-          <InteractivePieChart 
-            data={data.paymentStats.map(d => ({ label: d.method, value: d.count }))} 
-            colors={['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444']}
+          <InteractiveBarChart 
+            data={data.ordersByLocation?.slice(0, 5)?.map(d => ({ 
+              label: d.location?.length > 12 ? d.location.substring(0, 12) + '...' : d.location, 
+              value: d.sales || 0
+            })) || []} 
+            color="#22c55e"
           />
         </ChartCard>
       </div>
 
       {/* Charts Grid - Row 3: Lokasi Teratas & Jam Sibuk */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {(data.ordersByLocation.length > 0 || showRestaurantComparison) && (
+        {(data.ordersByLocation && data.ordersByLocation.length > 0 || showRestaurantComparison) && (
           <ChartCard 
-            title="Lokasi dengan Pesanan Tertinggi"
-            description="Area geografis dengan volume pesanan tertinggi"
-            insight={`Terbaik: ${data.ordersByLocation[0]?.location || '-'} (${data.ordersByLocation[0]?.count || 0} pesanan).`}
-            recommendation="Optimasi rute delivery untuk area tersebut."
+            title="Kota dengan Transaksi Tertinggi"
+            description="Area geografis dengan volume transaksi tertinggi"
+            insight={`Terbaik: ${data.ordersByLocation?.[0]?.location || '-'} (${data.ordersByLocation?.[0]?.count || 0} transaksi).`}
+            recommendation="Fokuskan ekspansi di kota-kota dengan potensi tinggi."
           >
             <InteractiveBarChart 
-              data={data.ordersByLocation.slice(0, 10).map(d => ({ 
-                label: d.location.length > 15 ? d.location.substring(0, 15) + '...' : d.location, 
+              data={data.ordersByLocation?.slice(0, 10)?.map(d => ({ 
+                label: d.location?.length > 15 ? d.location.substring(0, 15) + '...' : d.location, 
                 value: d.count 
-              }))} 
+              })) || []} 
               color="#22c55e"
             />
           </ChartCard>
         )}
 
-        {data.peakHourStats.length > 0 && (
+        {data.peakHourStats && data.peakHourStats.length > 0 && (
           <ChartCard 
-            title="Distribusi Pesanan per Jam"
+            title="Distribusi Transaksi per Jam"
             description="Analisis jam sibuk dan jam sepi"
             insight={`Jam tersibuk: ${getPeakHour()}. Peak hours menyumbang ~${Math.round((data.peakHourStats.filter(h => (h.hour >= 11 && h.hour <= 13) || (h.hour >= 18 && h.hour <= 21)).reduce((sum, h) => sum + h.count, 0) / data.totalOrders * 100))}% dari total.`}
             recommendation="Tingkatkan staff pada jam sibuk (11-13 & 18-21)."
           >
             <InteractiveBarChart 
-              data={data.peakHourStats.map(d => ({ label: `${d.hour}:00`, value: d.count }))} 
+              data={data.peakHourStats?.map(d => ({ label: `${d.hour}:00`, value: d.count }))} 
               color="#8b5cf6"
             />
           </ChartCard>
         )}
+      </div>
+
+      {/* Charts Grid - Row 4: Metode Penjualan (Uses Slicer Filters) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ChartCard 
+          title="Metode Penjualan"
+          description="Distribusi berdasarkan cara penjualan (dapat difilter melalui Slicer di atas)"
+          insight={data.ordersByMethod && data.ordersByMethod.length > 0 
+            ? `Metode penjualan paling banyak: ${data.ordersByMethod.sort((a, b) => b.count - a.count)[0]?.method || '-'} (${data.ordersByMethod.sort((a, b) => b.count - a.count)[0]?.count || 0} transaksi).`
+            : 'Belum ada data metode penjualan.'}
+          recommendation="Pastikan sistem penjualan utama selalu berjalan lancer."
+        >
+          <InteractivePieChart 
+            data={data.ordersByMethod?.map(d => ({ label: d.method, value: d.count })) || []} 
+            colors={['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444']}
+          />
+        </ChartCard>
+
+        <ChartCard 
+          title="Ringkasan Keuangan"
+          description="Total penjualan, profit, dan rata-rata per transaksi (dapat difilter melalui Slicer)"
+          insight={`Total Penjualan: ${formatCurrency(data.salesStats?.total || 0)} | Total Profit: ${formatCurrency(data.salesStats?.profit || 0)} | Rata-rata per transaksi: ${formatCurrency(data.salesStats?.avgOrderValue || 0)}`}
+          recommendation="Pantau terus performa keuangan dan pastikan profit margin sehat."
+        >
+          <div className="grid grid-cols-3 gap-4 h-full items-center">
+            <div className="text-center p-4 bg-blue-50 rounded-xl">
+              <p className="text-xs text-blue-600 font-semibold uppercase">Total Penjualan</p>
+              <p className="text-xl font-bold text-blue-700 mt-1">{formatCurrency(data.salesStats?.total || 0)}</p>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-xl">
+              <p className="text-xs text-green-600 font-semibold uppercase">Total Profit</p>
+              <p className="text-xl font-bold text-green-700 mt-1">{formatCurrency(data.salesStats?.profit || 0)}</p>
+            </div>
+            <div className="text-center p-4 bg-purple-50 rounded-xl">
+              <p className="text-xs text-purple-600 font-semibold uppercase">Rata-rata</p>
+              <p className="text-xl font-bold text-purple-700 mt-1">{formatCurrency(data.salesStats?.avgOrderValue || 0)}</p>
+            </div>
+          </div>
+        </ChartCard>
       </div>
     </div>
   )

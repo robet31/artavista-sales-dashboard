@@ -1,13 +1,13 @@
 import * as XLSX from 'xlsx'
 import { ValidationError, CleansedData } from '@/types'
 
-const PIZZA_SIZES = ['Small', 'Medium', 'Large', 'XL']
-const PIZZA_TYPES = ['Veg', 'Non-Veg', 'Vegan', 'Cheese Burst', 'Supreme', 'Meat Lovers', 'Margherita', 'Pepperoni', 'Hawaiian', 'BBQ Chicken', 'Seafood', 'Mushroom']
-const TRAFFIC_LEVELS = ['Low', 'Medium', 'High']
-const PAYMENT_METHODS = ['Card', 'Cash', 'Wallet', 'UPI', 'Hut Points']
-const PAYMENT_CATEGORIES = ['Online', 'Offline']
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 
-                 'July', 'August', 'September', 'October', 'November', 'December']
+const PRODUCTS = [
+  "Men's Apparel", "Women's Apparel", 
+  "Men's Street Footwear", "Women's Street Footwear",
+  "Men's Athletic Footwear", "Women's Athletic Footwear"
+]
+const SALES_METHODS = ['Online (E-commerce)', 'In-store', 'Outlet']
+const REGIONS = ['Sumatera Utara', 'DKI Jakarta', 'Jawa Barat', 'Jawa Timur', 'Sulawesi', 'Kalimantan']
 
 export function parseExcelFile(buffer: Buffer): Partial<any>[] {
   const workbook = XLSX.read(buffer, { type: 'buffer' })
@@ -17,9 +17,8 @@ export function parseExcelFile(buffer: Buffer): Partial<any>[] {
   return data as Partial<any>[]
 }
 
-export function cleanseData(
+export function cleanseDataAdidas(
   rawData: Partial<any>[], 
-  restaurantId: string,
   uploadedBy: string
 ): CleansedData {
   const errors: ValidationError[] = []
@@ -33,366 +32,161 @@ export function cleanseData(
 
     const cleansedRow: any = {}
 
-    // Order ID - ensure unique
-    let orderId = ''
-    if (!row['Order ID']) {
+    // Retailer ID - use as retailer_name
+    let retailerId = ''
+    if (!row['Retailer ID'] && !row['Retailer ID ']) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Order ID',
-        message: 'Order ID diperlukan, menggunakan default',
+        column: 'Retailer ID',
+        message: 'Retailer ID diperlukan',
         severity: 'warning'
       })
       rowScore -= 10
-      orderId = `ORD${Date.now()}${index}${Math.floor(Math.random() * 1000)}`
+      retailerId = `RTL${Date.now()}${index}`
     } else {
-      orderId = String(row['Order ID']).trim().toUpperCase()
-      if (!/^ORD\d+$/.test(orderId)) {
-        rowErrors.push({
-          row: rowNumber,
-          column: 'Order ID',
-          message: 'Format Order ID tidak standar',
-          severity: 'warning'
-        })
-        rowScore -= 5
-      }
-      // Make unique by appending timestamp and index if needed
-      orderId = `${orderId}_${Date.now()}_${index}`
+      retailerId = String(row['Retailer ID'] || row['Retailer ID '] || '').trim()
     }
-    cleansedRow.orderId = orderId
+    cleansedRow.retailer_id = retailerId
+    cleansedRow.retailer_name = retailerId  // Use retailer ID as name for lookup
 
-    // Restaurant Name - will be mapped to restaurantId
-    const restaurantName = row['Restaurant Name'] || 'Unknown'
-    if (!row['Restaurant Name']) {
+    // Invoice Date
+    let invoiceDate = parseDate(row['Invoice Date'])
+    if (!invoiceDate) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Restaurant Name',
-        message: 'Nama restoran tidak tersedia',
+        column: 'Invoice Date',
+        message: 'Format Invoice Date tidak valid',
+        severity: 'warning'
+      })
+      rowScore -= 5
+      invoiceDate = new Date()
+    }
+    cleansedRow.invoice_date = invoiceDate?.toISOString()
+
+    // Region - this is actually the State in the Excel
+    let region = String(row['Region'] || row['Region '] || '').trim()
+    if (!region) {
+      rowErrors.push({
+        row: rowNumber,
+        column: 'Region',
+        message: 'Region diperlukan',
         severity: 'warning'
       })
       rowScore -= 5
     }
-    cleansedRow.restaurantName = restaurantName
+    cleansedRow.region = region || null
+    cleansedRow.state = region || null  // Map Region to State
 
-    // Location
-    if (!row['Location']) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Location',
-        message: 'Lokasi diperlukan',
-        severity: 'warning'
-      })
-      rowScore -= 5
-    }
-    cleansedRow.location = String(row['Location'] || '').trim()
+    // City
+    let city = String(row['City'] || row['City '] || '').trim()
+    cleansedRow.city = city || null
 
-    // Order Time
-    let orderTime = parseDate(row['Order Time'])
-    if (!orderTime) {
+    // Product
+    let product = String(row['Product'] || row['Product '] || '').trim()
+    if (!product) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Order Time',
-        message: 'Format Order Time tidak valid, menggunakan waktu sekarang',
-        severity: 'warning'
-      })
-      rowScore -= 5
-      orderTime = new Date()
-    }
-    cleansedRow.orderTime = orderTime
-
-    // Delivery Time
-    let deliveryTime = parseDate(row['Delivery Time'])
-    if (!deliveryTime) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Delivery Time',
-        message: 'Format Delivery Time tidak valid, menggunakan estimasi',
-        severity: 'warning'
-      })
-      rowScore -= 5
-      deliveryTime = new Date(orderTime.getTime() + 30 * 60 * 1000) // +30 menit
-    } else if (orderTime && deliveryTime < orderTime) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Delivery Time',
-        message: 'Delivery Time lebih kecil dari Order Time, diperbaiki',
-        severity: 'warning'
-      })
-      rowScore -= 5
-      deliveryTime = new Date(orderTime.getTime() + 30 * 60 * 1000)
-    }
-    cleansedRow.deliveryTime = deliveryTime
-
-    // Delivery Duration
-    const deliveryDuration = parseNumber(row['Delivery Duration (min)'])
-    if (deliveryDuration === null || deliveryDuration <= 0) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Delivery Duration',
-        message: 'Delivery Duration harus lebih dari 0',
+        column: 'Product',
+        message: 'Product diperlukan',
         severity: 'error'
       })
       rowScore -= 10
     }
-    cleansedRow.deliveryDuration = deliveryDuration || 0
+    cleansedRow.product = product || 'Unknown'
 
-    // Order Month - Normalize
-    let orderMonth = String(row['Order Month'] || '').trim()
-    const monthMap: { [key: string]: string } = {
-      'jan': 'January', 'january': 'January',
-      'feb': 'February', 'february': 'February',
-      'mar': 'March', 'march': 'March',
-      'apr': 'April', 'april': 'April',
-      'may': 'May',
-      'jun': 'June', 'june': 'June',
-      'jul': 'July', 'july': 'July',
-      'aug': 'August', 'august': 'August',
-      'sep': 'September', 'sept': 'September', 'september': 'September',
-      'oct': 'October', 'october': 'October',
-      'nov': 'November', 'november': 'November',
-      'dec': 'December', 'december': 'December'
-    }
-    const orderMonthLower = orderMonth.toLowerCase()
-    if (monthMap[orderMonthLower]) {
-      orderMonth = monthMap[orderMonthLower]
-    }
-    
-    if (!MONTHS.includes(orderMonth)) {
+    // Price per Unit
+    let pricePerUnit = parseFloatValue(row['Price per Unit'])
+    if (pricePerUnit === null || pricePerUnit < 0) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Order Month',
-        message: `Order Month harus salah satu dari: ${MONTHS.join(', ')}`,
-        severity: 'warning'
-      })
-      rowScore -= 5
-    }
-    cleansedRow.orderMonth = orderMonth || 'Unknown'
-
-    // Order Hour
-    const orderHour = parseNumber(row['Order Hour'])
-    if (orderHour === null || orderHour < 0 || orderHour > 23) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Order Hour',
-        message: 'Order Hour harus antara 0-23',
+        column: 'Price per Unit',
+        message: 'Price per Unit harus >= 0',
         severity: 'warning'
       })
       rowScore -= 3
     }
-    cleansedRow.orderHour = orderHour ?? 0
+    cleansedRow.price_per_unit = pricePerUnit
 
-    // Pizza Size - Normalize
-    let pizzaSize = String(row['Pizza Size'] || '').trim()
-    const pizzaSizeLower = pizzaSize.toLowerCase()
-    if (pizzaSizeLower === 'small' || pizzaSizeLower === 's') pizzaSize = 'Small'
-    else if (pizzaSizeLower === 'medium' || pizzaSizeLower === 'med' || pizzaSizeLower === 'm') pizzaSize = 'Medium'
-    else if (pizzaSizeLower === 'large' || pizzaSizeLower === 'l') pizzaSize = 'Large'
-    else if (pizzaSizeLower === 'xl' || pizzaSizeLower === 'extra large' || pizzaSizeLower === 'extra-large') pizzaSize = 'XL'
-    
-    if (!PIZZA_SIZES.includes(pizzaSize)) {
+    // Units Sold
+    let unitsSold = parseNumber(row['Units Sold'])
+    if (unitsSold === null || unitsSold < 0) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Pizza Size',
-        message: `Pizza Size harus salah satu dari: ${PIZZA_SIZES.join(', ')}`,
-        severity: 'warning'
-      })
-      rowScore -= 5
-    }
-    cleansedRow.pizzaSize = pizzaSize || 'Unknown'
-
-    // Pizza Type - Normalize with more variations
-    let pizzaType = String(row['Pizza Type'] || '').trim()
-    const pizzaTypeLower = pizzaType.toLowerCase()
-    
-    // Normalize common variations
-    if (pizzaTypeLower.includes('veg') && !pizzaTypeLower.includes('non')) pizzaType = 'Veg'
-    else if (pizzaTypeLower.includes('non') && pizzaTypeLower.includes('veg')) pizzaType = 'Non-Veg'
-    else if (pizzaTypeLower.includes('vegan') || pizzaTypeLower.includes('plant')) pizzaType = 'Vegan'
-    else if (pizzaTypeLower.includes('cheese') && pizzaTypeLower.includes('burst')) pizzaType = 'Cheese Burst'
-    else if (pizzaTypeLower.includes('supreme')) pizzaType = 'Supreme'
-    else if (pizzaTypeLower.includes('meat') || pizzaTypeLower.includes('lover')) pizzaType = 'Meat Lovers'
-    else if (pizzaTypeLower.includes('margherita') || pizzaTypeLower.includes('margarita')) pizzaType = 'Margherita'
-    else if (pizzaTypeLower.includes('pepperoni')) pizzaType = 'Pepperoni'
-    else if (pizzaTypeLower.includes('hawaiian')) pizzaType = 'Hawaiian'
-    else if (pizzaTypeLower.includes('bbq') || pizzaTypeLower.includes('chicken')) pizzaType = 'BBQ Chicken'
-    else if (pizzaTypeLower.includes('seafood')) pizzaType = 'Seafood'
-    else if (pizzaTypeLower.includes('mushroom')) pizzaType = 'Mushroom'
-    
-    if (!PIZZA_TYPES.includes(pizzaType)) {
-      // Don't add error, just set to Unknown
-      pizzaType = 'Unknown'
-    }
-    cleansedRow.pizzaType = pizzaType || 'Unknown'
-
-    // Toppings Count
-    const toppingsCount = parseNumber(row['Toppings Count'])
-    if (toppingsCount === null || toppingsCount < 0) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Toppings Count',
-        message: 'Toppings Count harus >= 0',
+        column: 'Units Sold',
+        message: 'Units Sold harus >= 0',
         severity: 'warning'
       })
       rowScore -= 3
     }
-    cleansedRow.toppingsCount = toppingsCount ?? 0
+    cleansedRow.units_sold = unitsSold
 
-    // Pizza Complexity
-    const pizzaComplexity = parseNumber(row['Pizza Complexity'])
-    if (pizzaComplexity === null || pizzaComplexity < 0) {
+    // Total Sales
+    let totalSales = parseFloatValue(row['Total Sales'])
+    if (totalSales === null || totalSales <= 0) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Pizza Complexity',
-        message: 'Pizza Complexity harus >= 0',
+        column: 'Total Sales',
+        message: 'Total Sales harus > 0',
+        severity: 'error'
+      })
+      rowScore -= 10
+      totalSales = 0
+    }
+    cleansedRow.total_sales = totalSales || 0
+
+    // Operating Profit
+    let operatingProfit = parseFloatValue(row['Operating Profit'])
+    if (operatingProfit === null) {
+      rowErrors.push({
+        row: rowNumber,
+        column: 'Operating Profit',
+        message: 'Operating Profit diperlukan',
         severity: 'warning'
       })
       rowScore -= 3
     }
-    cleansedRow.pizzaComplexity = pizzaComplexity ?? 0
+    cleansedRow.operating_profit = operatingProfit || 0
 
-    // Topping Density
-    const toppingDensity = parseFloatValue(row['Topping Density'])
-    cleansedRow.toppingDensity = (toppingDensity === null || isNaN(toppingDensity)) ? null : toppingDensity
-
-    // Distance
-    let distanceKm = parseFloatValue(row['Distance (km)'])
-    if (distanceKm === null || distanceKm <= 0) {
+    // Operating Margin
+    let operatingMargin = parseFloatValue(row['Operating Margin'])
+    if (operatingMargin !== null && (operatingMargin < 0 || operatingMargin > 1)) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Distance',
-        message: 'Distance tidak valid, menggunakan default 5 km',
-        severity: 'warning'
-      })
-      rowScore -= 5
-      distanceKm = 5
-    }
-    cleansedRow.distanceKm = distanceKm
-
-    // Traffic Level - Normalize
-    let trafficLevel = String(row['Traffic Level'] || '').trim()
-    const trafficLevelLower = trafficLevel.toLowerCase()
-    if (trafficLevelLower === 'low' || trafficLevelLower === 'l') trafficLevel = 'Low'
-    else if (trafficLevelLower === 'medium' || trafficLevelLower === 'med' || trafficLevelLower === 'm') trafficLevel = 'Medium'
-    else if (trafficLevelLower === 'high' || trafficLevelLower === 'h') trafficLevel = 'High'
-    
-    if (!TRAFFIC_LEVELS.includes(trafficLevel)) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Traffic Level',
-        message: `Traffic Level harus salah satu dari: ${TRAFFIC_LEVELS.join(', ')}`,
-        severity: 'warning'
-      })
-      rowScore -= 3
-    }
-    cleansedRow.trafficLevel = trafficLevel || 'Unknown'
-
-    // Traffic Impact
-    const trafficImpact = parseNumber(row['Traffic Impact'])
-    if (trafficImpact === null || trafficImpact < 1 || trafficImpact > 3) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Traffic Impact',
-        message: 'Traffic Impact harus antara 1-3',
+        column: 'Operating Margin',
+        message: 'Operating Margin harus antara 0-1',
         severity: 'warning'
       })
       rowScore -= 2
+      operatingMargin = null
     }
-    cleansedRow.trafficImpact = trafficImpact ?? 1
+    cleansedRow.operating_margin = operatingMargin
 
-    // Is Peak Hour
-    cleansedRow.isPeakHour = parseBoolean(row['Is Peak Hour'])
-
-    // Is Weekend
-    cleansedRow.isWeekend = parseBoolean(row['Is Weekend'])
-
-    // Payment Method - Normalize values
-    let paymentMethod = String(row['Payment Method'] || '').trim()
-    
-    // Normalize payment method values
-    const paymentMethodLower = paymentMethod.toLowerCase()
-    if (paymentMethodLower.includes('card') || paymentMethodLower.includes('credit') || paymentMethodLower.includes('debit')) {
-      paymentMethod = 'Card'
-    } else if (paymentMethodLower.includes('cash')) {
-      paymentMethod = 'Cash'
-    } else if (paymentMethodLower.includes('wallet') || paymentMethodLower.includes('e-wallet') || paymentMethodLower.includes('ewallet')) {
-      paymentMethod = 'Wallet'
-    } else if (paymentMethodLower.includes('upi') || paymentMethodLower.includes('transfer')) {
-      paymentMethod = 'UPI'
-    } else if (paymentMethodLower.includes('hut') || paymentMethodLower.includes('points')) {
-      paymentMethod = 'Hut Points'
+    // Sales Method
+    let salesMethod = String(row['Sales Method'] || row['Sales Method '] || '').trim()
+    const salesMethodLower = salesMethod.toLowerCase()
+    if (salesMethodLower.includes('online') || salesMethodLower.includes('e-commerce')) {
+      salesMethod = 'Online (E-commerce)'
+    } else if (salesMethodLower.includes('in-store') || salesMethodLower.includes('instore')) {
+      salesMethod = 'In-store'
+    } else if (salesMethodLower.includes('outlet')) {
+      salesMethod = 'Outlet'
     }
     
-    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+    if (!SALES_METHODS.includes(salesMethod)) {
       rowErrors.push({
         row: rowNumber,
-        column: 'Payment Method',
-        message: `Payment Method "${row['Payment Method']}" tidak dikenali. Harus salah satu dari: ${PAYMENT_METHODS.join(', ')}`,
+        column: 'Sales Method',
+        message: `Sales Method harus salah satu dari: ${SALES_METHODS.join(', ')}`,
         severity: 'warning'
       })
       rowScore -= 3
     }
-    cleansedRow.paymentMethod = paymentMethod || 'Unknown'
+    cleansedRow.sales_method = salesMethod || null
 
-    // Payment Category - Normalize
-    let paymentCategory = String(row['Payment Category'] || '').trim()
-    const paymentCategoryLower = paymentCategory.toLowerCase()
-    if (paymentCategoryLower === 'online' || paymentCategoryLower === 'digital' || paymentCategoryLower === 'electronic') paymentCategory = 'Online'
-    else if (paymentCategoryLower === 'offline' || paymentCategoryLower === 'cash' || paymentCategoryLower === 'in-store') paymentCategory = 'Offline'
-    
-    if (!PAYMENT_CATEGORIES.includes(paymentCategory)) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Payment Category',
-        message: `Payment Category harus salah satu dari: ${PAYMENT_CATEGORIES.join(', ')}`,
-        severity: 'warning'
-      })
-      rowScore -= 3
-    }
-    cleansedRow.paymentCategory = paymentCategory || 'Unknown'
+    // Metadata
+    cleansedRow.uploaded_by = uploadedBy
+    cleansedRow.quality_score = Math.max(0, rowScore)
 
-    // Estimated Duration
-    const estimatedDuration = parseFloatValue(row['Estimated Duration (min)'])
-    if (estimatedDuration === null || estimatedDuration <= 0) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Estimated Duration',
-        message: 'Estimated Duration harus > 0',
-        severity: 'warning'
-      })
-      rowScore -= 3
-    }
-    cleansedRow.estimatedDuration = estimatedDuration || 0
-
-    // Delivery Efficiency
-    const deliveryEfficiency = parseFloatValue(row['Delivery Efficiency (min/km)'])
-    cleansedRow.deliveryEfficiency = (deliveryEfficiency === null || isNaN(deliveryEfficiency)) ? null : deliveryEfficiency
-
-    // Delay
-    const delayMin = parseFloatValue(row['Delay (min)'])
-    if (delayMin === null || delayMin < 0) {
-      rowErrors.push({
-        row: rowNumber,
-        column: 'Delay',
-        message: 'Delay harus >= 0',
-        severity: 'warning'
-      })
-      rowScore -= 2
-    }
-    cleansedRow.delayMin = delayMin ?? 0
-
-    // Is Delayed
-    cleansedRow.isDelayed = parseBoolean(row['Is Delayed'])
-
-    // Restaurant Avg Time
-    const restaurantAvgTime = parseFloatValue(row['Restaurant Avg Time'])
-    cleansedRow.restaurantAvgTime = (restaurantAvgTime === null || isNaN(restaurantAvgTime)) ? null : restaurantAvgTime
-
-    // Add metadata
-    cleansedRow.restaurantId = restaurantId
-    cleansedRow.uploadedBy = uploadedBy
-    cleansedRow.uploadedAt = new Date()
-    cleansedRow.qualityScore = Math.max(0, rowScore)
-
-    // Accept all data, just track quality score
     validData.push(cleansedRow)
     totalQualityScore += Math.max(0, rowScore)
     errors.push(...rowErrors)
@@ -409,7 +203,7 @@ export function cleanseData(
   }
 }
 
-function parseDate(value: any): Date | null {
+export function parseDate(value: any): Date | null {
   if (!value) return null
   if (value instanceof Date) return value
   
@@ -489,31 +283,21 @@ function parseBoolean(value: any): boolean {
 export function validateExcelHeaders(headers: string[]): ValidationError[] {
   const errors: ValidationError[] = []
   const requiredHeaders = [
-    'Order ID',
-    'Restaurant Name',
-    'Location',
-    'Order Time',
-    'Delivery Time',
-    'Delivery Duration (min)',
-    'Pizza Size',
-    'Pizza Type',
-    'Toppings Count',
-    'Distance (km)',
-    'Traffic Level',
-    'Payment Method',
-    'Is Peak Hour',
-    'Is Weekend',
-    'Order Month',
-    'Payment Category'
+    'Retailer ID',
+    'Invoice Date',
+    'Product',
+    'Total Sales',
+    'Operating Profit'
   ]
   
   const optionalHeaders = [
-    'Estimated Duration (min)',
-    'Delay (min)',
-    'Is Delayed',
-    'Pizza Complexity',
-    'Traffic Impact',
-    'Order Hour'
+    'Region',
+    'State',
+    'City',
+    'Price per Unit',
+    'Units Sold',
+    'Operating Margin',
+    'Sales Method'
   ]
 
   const missingHeaders = requiredHeaders.filter(h => !headers.includes(h))

@@ -10,8 +10,8 @@ const openSans = Open_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Sunest Systems - Delivery Monitoring",
-  description: "Monitor and analyze delivery data from multiple restaurants",
+  title: "Artavista - Sales Dashboard",
+  description: "Monitor and analyze sales data from Adidas retail",
 };
 
 export default function RootLayout({

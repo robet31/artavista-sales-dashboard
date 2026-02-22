@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,184 +11,176 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
-    const userRestaurantId = (session.user as any)?.restaurantId
-    const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
     const { searchParams } = new URL(req.url)
-    const restaurantId = searchParams.get('restaurantId')
-    const filterMonth = searchParams.get('month')
-    const filterPizzaSize = searchParams.get('pizzaSize')
-    const filterPizzaType = searchParams.get('pizzaType')
-    const filterPaymentMethod = searchParams.get('paymentMethod')
     const getFilterOptions = searchParams.get('getFilterOptions') === 'true'
+    const filterMonth = searchParams.get('month')
+    const filterProduct = searchParams.get('pizzaSize')
+    const filterType = searchParams.get('pizzaType')
+    const filterMethod = searchParams.get('paymentMethod')
 
-    // If requesting filter options, return all unique values without applying filters
-    if (getFilterOptions) {
-      const whereClauseForOptions: any = {}
-      if (!isSuperAdmin && userRestaurantId) {
-        whereClauseForOptions.restaurantId = userRestaurantId
-      } else if (restaurantId && restaurantId !== 'all' && isSuperAdmin) {
-        whereClauseForOptions.restaurantId = restaurantId
+    // Get all data from Supabase
+    let query = supabase
+      .from('transaction')
+      .select(`
+        *,
+        retailer(retailer_name),
+        product(product),
+        method(method),
+        city(city, state(state))
+      `)
+
+    // Apply filters if provided
+    if (filterMonth && filterMonth !== 'all') {
+      query = query.like('invoice_date', `${filterMonth}%`)
+    }
+    if (filterProduct && filterProduct !== 'all') {
+      query = query.eq('product.product', filterProduct)
+    }
+    if (filterMethod && filterMethod !== 'all') {
+      query = query.eq('method.method', filterMethod)
+    }
+
+    const { data: transactions, error } = await query
+
+    if (error) {
+      console.error('Supabase error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!transactions || transactions.length === 0) {
+      return NextResponse.json({
+        totalOrders: 0,
+        ordersByRestaurant: [],
+        ordersByProduct: [],
+        ordersByType: [],
+        ordersByMonth: [],
+        ordersByLocation: [],
+        ordersByMethod: [],
+        salesStats: { total: 0, profit: 0 }
+      })
+    }
+
+    // Group by retailer
+    const retailerMap = new Map()
+    transactions.forEach(t => {
+      const name = (t as any).retailer?.retailer_name || 'Unknown'
+      if (!retailerMap.has(name)) {
+        retailerMap.set(name, { count: 0, sales: 0, profit: 0 })
       }
+      const current = retailerMap.get(name)
+      current.count += t.unit_sold || 0
+      current.sales += t.total_sales || 0
+      current.profit += t.operating_profit || 0
+    })
 
-      const [months, pizzaSizes, pizzaTypes, paymentMethods] = await Promise.all([
-        prisma.deliveryData.findMany({
-          where: whereClauseForOptions,
-          select: { orderMonth: true },
-          distinct: ['orderMonth']
-        }),
-        prisma.deliveryData.findMany({
-          where: whereClauseForOptions,
-          select: { pizzaSize: true },
-          distinct: ['pizzaSize']
-        }),
-        prisma.deliveryData.findMany({
-          where: whereClauseForOptions,
-          select: { pizzaType: true },
-          distinct: ['pizzaType']
-        }),
-        prisma.deliveryData.findMany({
-          where: whereClauseForOptions,
-          select: { paymentMethod: true },
-          distinct: ['paymentMethod']
-        })
-      ])
+    // Group by product
+    const productMap = new Map()
+    transactions.forEach(t => {
+      const name = (t as any).product?.product || 'Unknown'
+      if (!productMap.has(name)) {
+        productMap.set(name, { count: 0, sales: 0 })
+      }
+      const current = productMap.get(name)
+      current.count += t.unit_sold || 0
+      current.sales += t.total_sales || 0
+    })
 
+    // Group by method
+    const methodMap = new Map()
+    transactions.forEach(t => {
+      const name = (t as any).method?.method || 'Unknown'
+      if (!methodMap.has(name)) {
+        methodMap.set(name, { count: 0, sales: 0 })
+      }
+      const current = methodMap.get(name)
+      current.count += t.unit_sold || 0
+      current.sales += t.total_sales || 0
+    })
+
+    // Group by city
+    const cityMap = new Map()
+    transactions.forEach(t => {
+      const name = (t as any).city?.city || 'Unknown'
+      if (!cityMap.has(name)) {
+        cityMap.set(name, { count: 0, sales: 0 })
+      }
+      const current = cityMap.get(name)
+      current.count += t.unit_sold || 0
+      current.sales += t.total_sales || 0
+    })
+
+    // Group by month
+    const monthMap = new Map()
+    transactions.forEach(t => {
+      const month = t.invoice_date ? t.invoice_date.substring(0, 7) : 'Unknown'
+      if (!monthMap.has(month)) {
+        monthMap.set(month, { count: 0, sales: 0 })
+      }
+      const current = monthMap.get(month)
+      current.count += t.unit_sold || 0
+      current.sales += t.total_sales || 0
+    })
+
+    // Calculate totals
+    const totalUnits = transactions.reduce((sum, t) => sum + (t.unit_sold || 0), 0)
+    const totalSales = transactions.reduce((sum, t) => sum + (t.total_sales || 0), 0)
+    const totalProfit = transactions.reduce((sum, t) => sum + (t.operating_profit || 0), 0)
+
+    // Get unique values for filters
+    const months = [...monthMap.keys()].sort()
+    const products = [...productMap.keys()].sort()
+    const methods = [...methodMap.keys()].sort()
+
+    // Also get pizzaTypes (product category if available)
+    const pizzaTypes = products
+
+    if (getFilterOptions) {
       return NextResponse.json({
         filterOptions: {
-          months: months.map(m => m.orderMonth).filter(Boolean).sort(),
-          pizzaSizes: pizzaSizes.map(p => p.pizzaSize).filter(Boolean).sort(),
-          pizzaTypes: pizzaTypes.map(p => p.pizzaType).filter(Boolean).sort(),
-          paymentMethods: paymentMethods.map(p => p.paymentMethod).filter(Boolean).sort()
+          months,
+          pizzaSizes: products,
+          pizzaTypes,
+          paymentMethods: methods
         }
       })
     }
 
-    const whereClause: any = {}
-
-    // GM/ADMIN can see all or filter by restaurant
-    // MANAGER/STAFF can only see their assigned restaurant
-    if (!isSuperAdmin && userRestaurantId) {
-      whereClause.restaurantId = userRestaurantId
-    } else if (restaurantId && restaurantId !== 'all' && isSuperAdmin) {
-      whereClause.restaurantId = restaurantId
-    }
-
-    // Apply slicer filters
-    if (filterMonth) whereClause.orderMonth = filterMonth
-    if (filterPizzaSize) whereClause.pizzaSize = filterPizzaSize
-    if (filterPizzaType) whereClause.pizzaType = filterPizzaType
-    if (filterPaymentMethod) whereClause.paymentMethod = filterPaymentMethod
-
-    // Get all restaurants for comparison chart (ignoring restaurant filter, only slicer filters)
-    const filterOnlyClause: any = {}
-    if (filterMonth) filterOnlyClause.orderMonth = filterMonth
-    if (filterPizzaSize) filterOnlyClause.pizzaSize = filterPizzaSize
-    if (filterPizzaType) filterOnlyClause.pizzaType = filterPizzaType
-    if (filterPaymentMethod) filterOnlyClause.paymentMethod = filterPaymentMethod
-
-    const [allRestaurants, totalOrders, ordersBySize, ordersByType, ordersByMonth, ordersByLocation, delayStats, peakHourStats, paymentStats, ordersByRestaurantRaw] = await Promise.all([
-      prisma.restaurant.findMany({ select: { id: true, name: true } }),
-      prisma.deliveryData.count({ where: whereClause }),
-      prisma.deliveryData.groupBy({
-        by: ['pizzaSize'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: [{ _count: { orderId: 'desc' } }]
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['pizzaType'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: [{ _count: { orderId: 'desc' } }]
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['orderMonth'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: { orderMonth: 'asc' }
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['location'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: [{ _count: { orderId: 'desc' } }],
-        take: 10
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['isDelayed'],
-        where: whereClause,
-        _count: { orderId: true }
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['orderHour'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: [{ orderHour: 'asc' }]
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['paymentMethod'],
-        where: whereClause,
-        _count: { orderId: true },
-        orderBy: [{ _count: { orderId: 'desc' } }]
-      }),
-      prisma.deliveryData.groupBy({
-        by: ['restaurantId'],
-        where: filterOnlyClause,
-        _count: { orderId: true }
-      })
-    ])
-
-    // Create map for restaurant orders
-    const restaurantCountMap = new Map(
-      ordersByRestaurantRaw.map((o: { restaurantId: string; _count: { orderId: number } }) => [o.restaurantId, o._count.orderId])
-    )
-
-    // Return ALL restaurants with their order counts
-    const ordersByRestaurant = allRestaurants.map(r => ({
-      restaurant: r.name,
-      count: restaurantCountMap.get(r.id) || 0
-    }))
-
-    const onTimeCount = delayStats.find(d => !d.isDelayed)?._count.orderId || 0
-    const delayedCount = delayStats.find(d => d.isDelayed)?._count.orderId || 0
-
     return NextResponse.json({
-      totalOrders,
-      ordersByRestaurant,
-      ordersBySize: ordersBySize.map(o => ({
-        size: o.pizzaSize,
-        count: o._count.orderId
+      totalOrders: totalUnits,
+      ordersByRestaurant: Array.from(retailerMap.entries()).map(([name, data]: [string, any]) => ({
+        restaurant: name,
+        count: data.count,
+        sales: data.sales
       })),
-      ordersByType: ordersByType.map(o => ({
-        type: o.pizzaType,
-        count: o._count.orderId
+      ordersByProduct: Array.from(productMap.entries()).map(([name, data]: [string, any]) => ({
+        product: name,
+        count: data.count,
+        sales: data.sales
       })),
-      ordersByMonth: ordersByMonth.map(o => ({
-        month: o.orderMonth,
-        count: o._count.orderId
+      ordersByMethod: Array.from(methodMap.entries()).map(([name, data]: [string, any]) => ({
+        method: name,
+        count: data.count,
+        sales: data.sales
       })),
-      ordersByLocation: ordersByLocation.map(o => ({
-        location: o.location,
-        count: o._count.orderId
+      ordersByMonth: Array.from(monthMap.entries()).map(([month, data]: [string, any]) => ({
+        month,
+        count: data.count,
+        sales: data.sales
       })),
-      delayStats: {
-        onTime: onTimeCount,
-        delayed: delayedCount,
-        rate: totalOrders > 0 ? (onTimeCount / totalOrders) * 100 : 0
-      },
-      peakHourStats: peakHourStats.map(o => ({
-        hour: o.orderHour,
-        count: o._count.orderId
-      })),
-      paymentStats: paymentStats.map(o => ({
-        method: o.paymentMethod,
-        count: o._count.orderId
-      }))
+      ordersByLocation: Array.from(cityMap.entries()).map(([city, data]: [string, any]) => ({
+        location: city,
+        count: data.count,
+        sales: data.sales
+      })).slice(0, 10),
+      salesStats: {
+        total: totalSales,
+        profit: totalProfit,
+        avgOrderValue: totalUnits > 0 ? totalSales / totalUnits : 0
+      }
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Analytics error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

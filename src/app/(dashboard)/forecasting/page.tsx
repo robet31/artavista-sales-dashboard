@@ -65,8 +65,8 @@ export default function ForecastingPage() {
   const allowedRoles = ['GM', 'ADMIN_PUSAT']
   
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null)
-  const [dateColumn, setDateColumn] = useState('order_month')
-  const [valueColumn, setValueColumn] = useState('estimated_duration')
+  const [dateColumn, setDateColumn] = useState('invoice_date')
+  const [valueColumn, setValueColumn] = useState('total_sales')
   const [method, setMethod] = useState('exponential-smoothing')
   const [periods, setPeriods] = useState(7)
   const [isLoading, setIsLoading] = useState(true)
@@ -88,10 +88,14 @@ export default function ForecastingPage() {
     setIsLoading(true)
     try {
       const res = await fetch('/api/v1/analytics-data/summary')
+      if (!res.ok) {
+        throw new Error(`API Error: ${res.status}`)
+      }
       const data = await res.json()
       setDataSummary(data)
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      console.error('Fetch summary error:', err)
+      setError('Gagal memuat data: ' + (err.message || 'Unknown error'))
     } finally {
       setIsLoading(false)
     }
@@ -103,20 +107,26 @@ export default function ForecastingPage() {
     
     try {
       const res = await fetch('/api/v1/analytics-data/summary')
+      if (!res.ok) {
+        throw new Error(`Gagal mengambil data summary: ${res.status}`)
+      }
       const summaryData = await res.json()
       setDataSummary(summaryData)
       
       if (!summaryData.success || summaryData.total_orders === 0) {
-        setError('Tidak ada data di database')
+        setError('Tidak ada data di database. Silakan upload data terlebih dahulu di halaman Upload Data.')
         setIsCalculating(false)
         return
       }
 
       const dataRes = await fetch('/api/v1/analytics-data/all-data')
+      if (!dataRes.ok) {
+        throw new Error(`Gagal mengambil data transaksi: ${dataRes.status}`)
+      }
       const dataJson = await dataRes.json()
       
       if (!dataJson.data || dataJson.data.length === 0) {
-        setError('Tidak ada data di database')
+        setError('Tidak ada data transaksi di database. Silakan upload data terlebih dahulu.')
         setIsCalculating(false)
         return
       }
@@ -163,148 +173,36 @@ export default function ForecastingPage() {
           `📉 Data terakhir: Dari ${formatValue(lastActual)} → Prediksi ${formatValue(lastForecast)} (${lastChange > 0 ? '+' : ''}${lastChange.toFixed(1)}%)`
         ]
 
-        // Add period breakdown
-        const periodGroups: { [key: string]: number[] } = {}
-        forecastData.historical.forEach((h: { date: string; actual: number }) => {
-          const period = h.date.length >= 7 ? h.date.substring(0, 7) : h.date
-          if (!periodGroups[period]) periodGroups[period] = []
-          periodGroups[period].push(h.actual)
-        })
-        
-        if (Object.keys(periodGroups).length > 1) {
-          insights.push('')
-          insights.push('📅 Ringkasan per Periode:')
-          Object.keys(periodGroups).sort().forEach(period => {
-            const avg = periodGroups[period].reduce((a, b) => a + b, 0) / periodGroups[period].length
-            insights.push(`   • ${period}: ${formatValue(avg)}`)
-          })
-        }
-
         let recommendations = ''
-        if (valueColumn.includes('duration') || valueColumn.includes('time')) {
-          if (change > 10) {
-            recommendations = '🚨 WARNING: Prediksi menunjukkan KENAIKAN signifikan pada waktu pengiriman! Segera:\n' +
-              '1. Tambah driver/motor pengirim\n' +
-              '2. Optimalkan rute delivery dengan GPS\n' +
-              '3. Siapkan driver cadangan untuk jam sibuk\n' +
-              '4. Koordinasi dengan kitchen untuk faster preparation'
-          } else if (change > 5) {
-            recommendations = '⚠️ Peringatan: Waktu pengiriman diprediksi naik. Pertimbangkan:\n' +
-              '1. Menambah driver di jam sibuk\n' +
-              '2. Memperbaiki packing process\n' +
-              '3. Monitoring order queue lebih ketat'
-          } else if (change < -5) {
-            recommendations = '✅ Baik: Waktu pengiriman diprediksi lebih cepat! Pertahankan dengan:\n' +
-              '1. Catat best practices yang sudah diterapkan\n' +
-              '2. Training driver untuk efficiency\n' +
-              '3. Maintain rute optimal'
-          } else {
-            recommendations = '✅ Stabil: Waktu pengiriman diprediksi tetap stabil. Lanjutkan:\n' +
-              '1. Monitoring regularity\n' +
-              '2. Jaga quality service\n' +
-              '3. Persiapkan contingency plan jika needed'
-          }
-        } else if (valueColumn.includes('distance')) {
-          if (change > 10) {
-            recommendations = '🚨 WARNING: Jarak pengiriman diprediksi NAIK signifikan! Pertimbangkan:\n' +
-              '1. Tambah outlet/gerai baru\n' +
-              '2. Promo untuk area dekat outlet\n' +
-              '3. Optimasi zona delivery'
-          } else if (change > 5) {
-            recommendations = '⚠️ Peringatan: Jarak pengiriman meningkat. Evaluasi:\n' +
-              '1. Strategi marketing per area\n' +
-              '2. Penyesuaian ongkir'
-          } else {
-            recommendations = '✅ Jarak pengiriman stabil. Tingkatkan:\n' +
-              '1. Customer di area dekat outlet\n' +
-              '2. Delivery efficiency'
-          }
-        } else if (valueColumn.includes('delay')) {
-          if (change > 10) {
-            recommendations = '🚨 WARNING: Keterlambatan diprediksi NAIK tajam! Segera:\n' +
-              '1. Investigasi root cause\n' +
-              '2. Tambah staff kitchen\n' +
-              '3. Perbaiki quality control'
-          } else if (change > 5) {
-            recommendations = '⚠️ Warning: Keterlambatan meningkat. Evaluasi:\n' +
-              '1. Proses preparation\n' +
-              '2. Staffing schedule'
-          } else {
-            recommendations = '✅ Keterlambatan terkontrol. Jaga performa!'
-          }
-        } else if (valueColumn === 'order_count') {
+        if (valueColumn === 'total_sales') {
           if (change > 20) {
-            recommendations = '🚀 BOOST: Prediksi menunjukkan KENAIKAN PESANAN signifikan! Segera:\n' +
-              '1. Tambah stok bahan baku\n' +
-              '2. Recruiting tambahan staff\n' +
-              '3. Siapkan extra shift\n' +
-              '4. Siapkan packaging tambahan\n' +
-              '5. Pertimbangkan promo lanjutan!'
+            recommendations = '🚀 BOOST: Prediksi menunjukkan KENAIKAN PENJUALAN signifikan! Segera:\n1. Tambah stok produk\n2. Siapkan inventory tambahan\n3. Pertimbangkan ekspansi\n4. Marketing promo lanjutan!'
           } else if (change > 10) {
-            recommendations = '📈 Tren Bagus: Pesanan diprediksi naik. Siapkan:\n' +
-              '1. Inventory yang cukup\n' +
-              '2. Staffing yang memadai\n' +
-              '3. Marketing promo'
-          } else if (change > 5) {
-            recommendations = '⚡ Sedikit Naik: Pesanan sedikit meningkat. Monitoring:\n' +
-              '1. Stock daily\n' +
-              '2. Shift scheduling'
+            recommendations = '📈 Tren Bagus: Penjualan diprediksi naik. Siapkan:\n1. Inventory yang cukup\n2. Staffing yang memadai\n3. Marketing promo'
           } else if (change < -10) {
-            recommendations = '📉 WARNING: Pesanan diprediksi TURUN tajam! Segera:\n' +
-              '1. Evaluasi marketing\n' +
-              '2. Diskon/promo darurat\n' +
-              '3. Survey customer\n' +
-              '4. Cek kompetitor'
+            recommendations = '📉 WARNING: Penjualan diprediksi TURUN tajam! Segera:\n1. Evaluasi marketing\n2. Diskon/promo darurat\n3. Survey customer\n4. Cek kompetitor'
           } else if (change < -5) {
-            recommendations = '⚠️ Penurunan: Pesanan menurun. Evaluasi:\n' +
-              '1. Strategi promo\n' +
-              '2. Kualitas produk\n' +
-              '3. Service speed'
+            recommendations = '⚠️ Penurunan: Penjualan menurun. Evaluasi:\n1. Strategi promo\n2. Kualitas produk\n3. Service speed'
           } else {
-            recommendations = '✅ Stabil: Jumlah pesanan stabil. Jaga:\n' +
-              '1. Konsistensi kualitas\n' +
-              '2. Service excellent\n' +
-              '3. Building customer loyalty'
+            recommendations = '✅ Stabil: Jumlah penjualan stabil. Jaga:\n1. Konsistensi kualitas\n2. Service excellent\n3. Building customer loyalty'
           }
-        } else if (valueColumn === 'pizza_type' || valueColumn === 'pizza_size') {
-          if (change > 10) {
-            recommendations = '📊 Insights: Jenis pizza tertentu SEDANG POPULER! Aksi:\n' +
-              '1. Prioritaskan stok bahan pizza populer\n' +
-              '2. Buat promo bundle untuk pizza tersebut\n' +
-              '3. Highlight di menu/marketing'
-          } else if (change > 5) {
-            recommendations = '📈 Tren: Mulai ada shift ke pizza tertentu. Siapkan:\n' +
-              '1. Stock bahan yang related\n' +
-              '2. Training staff untuk pizza popular'
-          } else {
-            recommendations = '✅ Diversifikasi: Variasi pizza tetap stabil. Jaga:\n' +
-              '1. Semua varian tersedia\n' +
-              '2. Quality consistency semua jenis'
-          }
-        } else if (valueColumn === 'payment_method') {
-          if (change > 10) {
-            recommendations = '💳 Shift: Metode pembayaran tertentu MENJADI POPULER! Pastikan:\n' +
-              '1. Payment gateway aktif\n' +
-              '2. Quick response untuk metode populer\n' +
-              '3. Promo khusus metode tersebut'
-          } else {
-            recommendations = '✅ Stabil: Pola pembayaran stabil. Monitor:\n' +
-              '1. Payment options availability\n' +
-              '2. Transaction speed'
-          }
-        } else if (valueColumn === 'traffic_level') {
-          if (change > 10) {
-            recommendations = '🚗 Waspada: Lalu lintas MENINGKAT! Siapkan:\n' +
-              '1. Driver lebih banyak\n' +
-              '2. Route optimization\n' +
-              '3. Estimated time adjustment'
+        } else if (valueColumn === 'unit_sold') {
+          if (change > 20) {
+            recommendations = '🚀 BOOST: Prediksi KENAIKAN unit terjual signifikan! Segera:\n1. Tambah stok\n2. Recruiting staff\n3. Siapkan extra shift\n4. Packaging tambahan'
+          } else if (change > 10) {
+            recommendations = '📈 Tren Bagus: Unit terjual diprediksi naik. Siapkan:\n1. Inventory cukup\n2. Staffing memadai'
           } else if (change < -10) {
-            recommendations = '🚦 Lancar: Lalu lintas decreasing. Manfaatkan:\n' +
-              '1. Faster delivery time\n' +
-              '2. Lebih banyak order bisa handle\n' +
-              '3. Promo peak hour'
+            recommendations = '📉 WARNING: Unit terjual diprediksi TURUN! Segera:\n1. Evaluasi produk\n2. Promo bundle\n3. Survey customer'
           } else {
-            recommendations = '✅ Normal: Kondisi lalu lintas stabil.'
+            recommendations = '✅ Stabil: Unit terjual stabil. Jaga:\n1. Konsistensi\n2. Kualitas produk'
+          }
+        } else if (valueColumn === 'operating_profit') {
+          if (change > 10) {
+            recommendations = '📈 Profit diprediksi NAIK! Manfaatkan untuk:\n1. Investasi bisnis\n2. Ekspansi\n3. Bonus tim'
+          } else if (change < -10) {
+            recommendations = '📉 Profit diprediksi TURUN! Evaluasi:\n1. Biaya operasional\n2. Pricing strategy\n3. Efisiensi'
+          } else {
+            recommendations = '✅ Stabil: Profit stabil. Monitor:\n1. Biaya operasional\n2. Margin keuntungan'
           }
         } else {
           recommendations = '💡 Rekomendasi: Gunakan data ini untuk perencanaan staffing dan inventory di periode mendatang.'
@@ -327,7 +225,7 @@ export default function ForecastingPage() {
     if (valueColumn.includes('distance')) return `${val.toFixed(1)} km`
     if (valueColumn.includes('delay')) return `${val.toFixed(1)} menit`
     if (valueColumn === 'order_count') return `${Math.round(val)} pesanan`
-    if (valueColumn === 'pizza_type' || valueColumn === 'pizza_size' || valueColumn === 'payment_method' || valueColumn === 'traffic_level') return `${Math.round(val)}x`
+    if (valueColumn === 'total_sales' || valueColumn === 'operating_profit') return `Rp ${(val/1000000).toFixed(1)}Jt`
     return val.toFixed(1)
   }
 
@@ -389,26 +287,11 @@ export default function ForecastingPage() {
 
   const getValueColumnDescription = (v: string) => {
     switch(v) {
-      case 'order_count':
-        return 'Jumlah Pesanan'
-      case 'pizza_type':
-        return 'Tipe Pizza (Frekuensi)'
-      case 'pizza_size':
-        return 'Ukuran Pizza (Frekuensi)'
-      case 'payment_method':
-        return 'Metode Pembayaran'
-      case 'traffic_level':
-        return 'Level Lalu Lintas'
-      case 'estimated_duration':
-        return 'Waktu Pengiriman (menit)'
-      case 'distance_km':
-        return 'Jarak Pengiriman (km)'
-      case 'delay_min':
-        return 'Keterlambatan (menit)'
-      case 'hour':
-        return 'Jam Pemesanan'
-      default:
-        return v.replace(/_/g, ' ')
+      case 'total_sales': return 'Total Penjualan (Revenue)'
+      case 'unit_sold': return 'Unit Terjual'
+      case 'operating_profit': return 'Operating Profit'
+      case 'order_count': return 'Jumlah Transaksi'
+      default: return v.replace(/_/g, ' ')
     }
   }
 
@@ -437,8 +320,7 @@ export default function ForecastingPage() {
     if (!result?.historical || !result?.forecast) return null
     const lastActual = result.historical[result.historical.length - 1]?.actual || 0
     const lastForecast = result.forecast[result.forecast.length - 1] || 0
-    const diff = lastForecast - lastActual
-    const percentChange = (diff / lastActual) * 100
+    const percentChange = ((lastForecast - lastActual) / lastActual) * 100
     
     if (Math.abs(percentChange) < 5) return { status: 'stabil', color: '#64748b', icon: Minus, text: 'Stabil' }
     if (percentChange > 0) return { status: 'naik', color: '#10b981', icon: TrendingUp, text: 'Naik' }
@@ -488,11 +370,7 @@ export default function ForecastingPage() {
                     </CardTitle>
                     <CardDescription className="text-base">Pilih parameter untuk menghitung prediksi</CardDescription>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setShowHelp(!showHelp)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setShowHelp(!showHelp)}>
                     <HelpCircle className="w-4 h-4 mr-2" />
                     {showHelp ? 'Sembunyikan' : 'Bantuan'}
                   </Button>
@@ -512,18 +390,12 @@ export default function ForecastingPage() {
                   <div>
                     <label className="text-sm font-medium text-slate-700 mb-2 block">Apa yang ingin diprediksi?</label>
                     <Select value={valueColumn} onValueChange={setValueColumn}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="order_count">📦 Jumlah Pesanan</SelectItem>
-                        <SelectItem value="pizza_type">🍕 Tipe Pizza (Frekuensi)</SelectItem>
-                        <SelectItem value="pizza_size">📏 Ukuran Pizza (Frekuensi)</SelectItem>
-                        <SelectItem value="payment_method">💳 Metode Pembayaran</SelectItem>
-                        <SelectItem value="traffic_level">🚗 Level Lalu Lintas</SelectItem>
-                        <SelectItem value="estimated_duration">⏱️ Waktu Pengiriman (menit)</SelectItem>
-                        <SelectItem value="distance_km">📍 Jarak Pengiriman (km)</SelectItem>
-                        <SelectItem value="delay_min">⏰ Keterlambatan (menit)</SelectItem>
+                        <SelectItem value="total_sales">💰 Total Penjualan (Revenue)</SelectItem>
+                        <SelectItem value="unit_sold">📦 Unit Terjual</SelectItem>
+                        <SelectItem value="operating_profit">📈 Operating Profit</SelectItem>
+                        <SelectItem value="order_count">📊 Jumlah Transaksi</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -531,9 +403,7 @@ export default function ForecastingPage() {
                   <div>
                     <label className="text-sm font-medium text-slate-700 mb-2 block">Metode Prediksi</label>
                     <Select value={method} onValueChange={setMethod}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="exponential-smoothing">📈 Exponential Smoothing</SelectItem>
                         <SelectItem value="moving-average">📊 Moving Average</SelectItem>
@@ -545,9 +415,7 @@ export default function ForecastingPage() {
                   <div>
                     <label className="text-sm font-medium text-slate-700 mb-2 block">Berapa lama ke depan?</label>
                     <Select value={periods.toString()} onValueChange={(v) => setPeriods(parseInt(v))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="3">3 periode</SelectItem>
                         <SelectItem value="7">7 periode</SelectItem>
@@ -558,16 +426,8 @@ export default function ForecastingPage() {
                   </div>
                   
                   <div className="flex items-end">
-                    <Button 
-                      onClick={runForecast} 
-                      disabled={isCalculating}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                    >
-                      {isCalculating ? (
-                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Menghitung...</>
-                      ) : (
-                        <><RefreshCw className="w-4 h-4 mr-2" /> Hitung Prediksi</>
-                      )}
+                    <Button onClick={runForecast} disabled={isCalculating} className="w-full bg-blue-600 hover:bg-blue-700">
+                      {isCalculating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Menghitung...</> : <><RefreshCw className="w-4 h-4 mr-2" /> Hitung Prediksi</>}
                     </Button>
                   </div>
                 </div>
@@ -617,76 +477,13 @@ export default function ForecastingPage() {
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis 
-                            dataKey="name" 
-                            tick={{ fontSize: 11, fill: '#64748b' }}
-                            tickLine={{ stroke: '#cbd5e1' }}
-                            axisLine={{ stroke: '#cbd5e1' }}
-                            interval={0}
-                            height={60}
-                          />
-                          <YAxis 
-                            tick={{ fontSize: 11, fill: '#64748b' }}
-                            tickLine={{ stroke: '#cbd5e1' }}
-                            axisLine={{ stroke: '#cbd5e1' }}
-                          />
-                          <Tooltip 
-                            contentStyle={{ 
-                              backgroundColor: '#fff', 
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '12px',
-                              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                              padding: '12px'
-                            }}
-                            formatter={(value, name) => {
-                              const numVal = Number(value)
-                              if (name === 'Aktual') {
-                                return [numVal > 0 ? formatValue(numVal) : '-', '📊 Data Aktual (Dari Database)']
-                              } else {
-                                return [numVal > 0 ? formatValue(numVal) : '-', '🔮 Hasil Prediksi']
-                              }
-                            }}
-                            labelStyle={{ color: '#1e293b', fontWeight: 600, marginBottom: '8px' }}
-                          />
-                          <Legend 
-                            wrapperStyle={{ paddingTop: '20px' }}
-                            formatter={(value: string) => (
-                              <span style={{ color: '#334155', fontWeight: 500 }}>
-                                {value === 'Aktual' ? '📊 Data Aktual (Histor)' : '🔮 Hasil Prediksi'}
-                              </span>
-                            )}
-                          />
-                          <Area 
-                            type="monotone" 
-                            dataKey="Aktual" 
-                            stroke="#3b82f6" 
-                            strokeWidth={3}
-                            fillOpacity={1} 
-                            fill="url(#colorActual)"
-                            name="Aktual"
-                            dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
-                            activeDot={{ r: 8, stroke: '#3b82f6', strokeWidth: 3, fill: '#fff' }}
-                          />
-                          <Line 
-                            type="monotone" 
-                            dataKey="Prediksi" 
-                            stroke="#10b981" 
-                            strokeWidth={3}
-                            strokeDasharray="8 4"
-                            dot={{ fill: '#10b981', strokeWidth: 2, r: 6, stroke: '#fff' }}
-                            activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 3, fill: '#fff' }}
-                            name="Prediksi"
-                            connectNulls
-                          />
-                          <Brush 
-                            dataKey="name" 
-                            height={40}
-                            stroke="#3b82f6"
-                            fill="#f1f5f9"
-                            tickFormatter={(value) => value.length > 8 ? value.substring(0, 6) + '..' : value}
-                            startIndex={Math.max(0, chartData.length - 15)}
-                            endIndex={chartData.length - 1}
-                          />
+                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={{ stroke: '#cbd5e1' }} axisLine={{ stroke: '#cbd5e1' }} interval={0} height={60} />
+                          <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={{ stroke: '#cbd5e1' }} axisLine={{ stroke: '#cbd5e1' }} />
+                          <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: '12px' }} formatter={(value, name) => [Number(value) > 0 ? formatValue(Number(value)) : '-', name === 'Aktual' ? '📊 Data Aktual' : '🔮 Prediksi']} labelStyle={{ color: '#1e293b', fontWeight: 600, marginBottom: '8px' }} />
+                          <Legend wrapperStyle={{ paddingTop: '20px' }} formatter={(value: string) => <span style={{ color: '#334155', fontWeight: 500 }}>{value === 'Aktual' ? '📊 Data Aktual' : '🔮 Prediksi'}</span>} />
+                          <Area type="monotone" dataKey="Aktual" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" name="Aktual" dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }} activeDot={{ r: 8, stroke: '#3b82f6', strokeWidth: 3, fill: '#fff' }} />
+                          <Line type="monotone" dataKey="Prediksi" stroke="#10b981" strokeWidth={3} strokeDasharray="8 4" dot={{ fill: '#10b981', strokeWidth: 2, r: 6, stroke: '#fff' }} activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 3, fill: '#fff' }} name="Prediksi" connectNulls />
+                          <Brush dataKey="name" height={40} stroke="#3b82f6" fill="#f1f5f9" tickFormatter={(value) => value.length > 8 ? value.substring(0, 6) + '..' : value} startIndex={Math.max(0, chartData.length - 15)} endIndex={chartData.length - 1} />
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -694,129 +491,163 @@ export default function ForecastingPage() {
                     {trend && (
                       <div className="mt-4 flex items-center justify-center gap-2 p-3 bg-slate-100 rounded-lg">
                         <trend.icon className="w-5 h-5" style={{ color: trend.color }} />
-                        <span className="font-medium" style={{ color: trend.color }}>
-                          Tren: {trend.text}
-                        </span>
-                        <span className="text-slate-500">
-                          (Perbandingan data terakhir aktual vs prediksi)
-                        </span>
+                        <span className="font-medium" style={{ color: trend.color }}>Tren: {trend.text}</span>
                       </div>
                     )}
 
                     <div className="flex gap-2 mt-6">
-                      <Button variant="outline" onClick={() => downloadResult('csv')}>
-                        <FileSpreadsheet className="w-4 h-4 mr-2" />
-                        Download CSV
-                      </Button>
-                      <Button variant="outline" onClick={() => downloadResult('json')}>
-                        <FileJson className="w-4 h-4 mr-2" />
-                        Download JSON
-                      </Button>
+                      <Button variant="outline" onClick={() => downloadResult('csv')}><FileSpreadsheet className="w-4 h-4 mr-2" />Download CSV</Button>
+                      <Button variant="outline" onClick={() => downloadResult('json')}><FileJson className="w-4 h-4 mr-2" />Download JSON</Button>
                     </div>
                   </CardContent>
                 </Card>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card className="border-l-4 border-l-blue-500">
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        💡 Kesimpulan Utama
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {result.insights && (
-                        <ul className="space-y-3 text-slate-700">
-                          {Array.isArray(result.insights) ? (
-                            result.insights.map((line: string, i: number) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-blue-500 mt-1">•</span>
-                                <span className="leading-relaxed">{line}</span>
-                              </li>
-                            ))
-                          ) : (
-                            result.insights.split('\n').filter((line: string) => line.trim()).map((line: string, i: number) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-blue-500 mt-1">•</span>
-                                <span className="leading-relaxed">{line}</span>
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="border-l-4 border-l-green-500">
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        🎯 Rekomendasi Aksi
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {result.recommendations && (
-                        <ul className="space-y-3 text-slate-700">
-                          {Array.isArray(result.recommendations) ? (
-                            result.recommendations.map((line: string, i: number) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-green-500 mt-1">•</span>
-                                <span className="leading-relaxed">{line}</span>
-                              </li>
-                            ))
-                          ) : (
-                            result.recommendations.split('\n').filter((line: string) => line.trim()).map((line: string, i: number) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-green-500 mt-1">•</span>
-                                <span className="leading-relaxed">{line}</span>
-                              </li>
-                            ))
-                          )}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <Card>
+                {/* Ringkasan Data - User Friendly */}
+                <Card className="border-l-4 border-l-purple-500">
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                       📊 Ringkasan Data
                     </CardTitle>
                     <CardDescription className="text-base">
-                      Ringkasan statistik dari data historis dan hasil prediksi
+                      Apa yang bisa Anda ambil dari data ini?
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="p-4 bg-slate-50 rounded-xl mb-4">
+                    <div className="bg-slate-50 p-3 rounded-lg mb-4">
                       <p className="text-sm text-slate-600">
-                        <Info className="w-4 h-4 inline mr-1" />
-                        <strong>Ringkasan Data</strong> menampilkan statistik penting yang membantu Anda memahami pola data secara keseluruhan.
+                        <strong>💡 Penjelasan:</strong> Ringkasan ini menunjukkan pola data historis Anda dan prediksi ke depan. 
+                        Gunakan untuk merencanakan inventory, staffing, dan target penjualan.
                       </p>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-4 bg-blue-50 rounded-xl">
-                        <p className="text-xs text-blue-600 font-medium">Data Historis</p>
-                        <p className="text-2xl font-bold text-blue-800">{result.historical?.length || 0} periode</p>
-                        <p className="text-xs text-blue-400">Jumlah periode data lampau</p>
+                    
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-xs text-blue-600 font-medium">📅 Data Historis</p>
+                        <p className="text-lg font-bold text-blue-800">{result.historical?.length || 0} periode</p>
+                        <p className="text-xs text-blue-400">Semakin banyak data, semakin akurat prediksi</p>
                       </div>
-                      <div className="p-4 bg-green-50 rounded-xl">
-                        <p className="text-xs text-green-600 font-medium">Periode Prediksi</p>
-                        <p className="text-2xl font-bold text-green-800">{result.forecast?.length || 0} periode</p>
-                        <p className="text-xs text-green-400">Berapa lama ke depan</p>
+                      <div className="p-3 bg-green-50 rounded-lg">
+                        <p className="text-xs text-green-600 font-medium">🔮 Prediksi</p>
+                        <p className="text-lg font-bold text-green-800">{result.forecast?.length || 0} periode</p>
+                        <p className="text-xs text-green-400">Estimasi nilai ke depan</p>
                       </div>
-                      <div className="p-4 bg-amber-50 rounded-xl">
-                        <p className="text-xs text-amber-600 font-medium">Rata-rata Aktual</p>
-                        <p className="text-2xl font-bold text-amber-800">
-                          {formatValue(result.historical?.reduce((a, b) => a + b.actual, 0) / (result.historical?.length || 1) || 0)}
-                        </p>
+                      <div className="p-3 bg-amber-50 rounded-lg">
+                        <p className="text-xs text-amber-600 font-medium">📈 Rata-rata Aktual</p>
+                        <p className="text-lg font-bold text-amber-800">{formatValue(result.historical?.reduce((a, b) => a + b.actual, 0) / (result.historical?.length || 1) || 0)}</p>
                         <p className="text-xs text-amber-400">Nilai rata-rata historis</p>
                       </div>
-                      <div className="p-4 bg-purple-50 rounded-xl">
-                        <p className="text-xs text-purple-600 font-medium">Rata-rata Prediksi</p>
-                        <p className="text-2xl font-bold text-purple-800">
-                          {formatValue(result.forecast?.reduce((a, b) => a + b, 0) / (result.forecast?.length || 1) || 0)}
-                        </p>
-                        <p className="text-xs text-purple-400">Nilai prediksi rata-rata</p>
+                      <div className="p-3 bg-purple-50 rounded-lg">
+                        <p className="text-xs text-purple-600 font-medium">🎯 Rata-rata Prediksi</p>
+                        <p className="text-lg font-bold text-purple-800">{formatValue(result.forecast?.reduce((a, b) => a + b, 0) / (result.forecast?.length || 1) || 0)}</p>
+                        <p className="text-xs text-purple-400">Estimasi rata-rata</p>
                       </div>
+                    </div>
+
+                    {trend && (
+                      <div className="p-3 bg-slate-100 rounded-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <trend.icon className="w-5 h-5" style={{ color: trend.color }} />
+                          <span className="font-medium" style={{ color: trend.color }}>Tren: {trend.text}</span>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {result.historical && result.forecast ? `${((result.forecast[result.forecast.length - 1] - result.historical[result.historical.length - 1].actual) / result.historical[result.historical.length - 1].actual * 100).toFixed(1)}%` : '-'} dari terakhir
+                        </span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Kesimpulan & Rekomendasi - Dropdown/Collapsible */}
+                <Card className="border-l-4 border-l-green-500">
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      💡 Kesimpulan & Rekomendasi
+                    </CardTitle>
+                    <CardDescription className="text-base">
+                      Klik untuk lihat analisis lengkap dan langkah aksi
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {/* Kesimpulan Utama */}
+                      <details className="group">
+                        <summary className="flex items-center justify-between p-3 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                          <span className="font-medium text-blue-800 flex items-center gap-2">📊 Kesimpulan Utama</span>
+                          <span className="text-blue-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div className="mt-2 p-3 bg-white border rounded-lg">
+                          {result.insights && (
+                            <ul className="space-y-2 text-sm text-slate-700">
+                              {Array.isArray(result.insights) ? result.insights.map((line: string, i: number) => (
+                                <li key={i} className="flex items-start gap-2"><span className="text-blue-500">•</span><span>{line}</span></li>
+                              )) : result.insights.split('\n').filter((line: string) => line.trim()).map((line: string, i: number) => (
+                                <li key={i} className="flex items-start gap-2"><span className="text-blue-500">•</span><span>{line}</span></li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </details>
+
+                      {/* Rekomendasi Strategis */}
+                      <details className="group">
+                        <summary className="flex items-center justify-between p-3 bg-green-50 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+                          <span className="font-medium text-green-800 flex items-center gap-2">🎯 Rekomendasi Strategis</span>
+                          <span className="text-green-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div className="mt-2 p-3 bg-white border rounded-lg">
+                          {result.recommendations && (
+                            <ul className="space-y-2 text-sm text-slate-700">
+                              {typeof result.recommendations === 'string' ? result.recommendations.split('\n').filter((line: string) => line.trim()).map((line: string, i: number) => (
+                                <li key={i} className="flex items-start gap-2"><span className="text-green-600">•</span><span>{line}</span></li>
+                              )) : <p className="text-slate-700">{result.recommendations}</p>}
+                            </ul>
+                          )}
+                        </div>
+                      </details>
+
+                      {/* Langkah Aksi Sekarang */}
+                      <details className="group">
+                        <summary className="flex items-center justify-between p-3 bg-amber-50 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+                          <span className="font-medium text-amber-800 flex items-center gap-2">⚡ Langkah Aksi Sekarang</span>
+                          <span className="text-amber-500 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div className="mt-2 p-3 bg-white border rounded-lg">
+                          <div className="space-y-2 text-sm text-slate-700">
+                            {valueColumn === 'total_sales' && (
+                              <>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">1.</span> Review strategi pricing</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">2.</span> Siapkan campaign marketing</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">3.</span> Koordinasi tim sales</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">4.</span> Evaluasi inventory produk</li>
+                              </>
+                            )}
+                            {valueColumn === 'unit_sold' && (
+                              <>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">1.</span> Analisis produk laris</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">2.</span> Siapkan bundle promo</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">3.</span> Koordinasi warehouse</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">4.</span> Training upselling</li>
+                              </>
+                            )}
+                            {valueColumn === 'operating_profit' && (
+                              <>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">1.</span> Evaluasi biaya operasional</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">2.</span> Identifikasi area hemat biaya</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">3.</span> Review pricing strategy</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">4.</span> Siapkan contingency budget</li>
+                              </>
+                            )}
+                            {valueColumn === 'order_count' && (
+                              <>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">1.</span> Siapkan staffing</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">2.</span> Koordinasi tim operasional</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">3.</span> Persiapkan sistem backup</li>
+                                <li className="flex items-start gap-2"><span className="text-amber-600">4.</span> Plan peak season</li>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   </CardContent>
                 </Card>
@@ -830,9 +661,7 @@ export default function ForecastingPage() {
             </div>
             <h2 className="text-2xl font-bold text-slate-800 mb-2">Belum Ada Data</h2>
             <p className="text-slate-500 mb-6">Silakan upload data terlebih dahulu di halaman Upload Data</p>
-            <Button onClick={() => router.push('/upload')}>
-              Upload Data
-            </Button>
+            <Button onClick={() => router.push('/upload')}>Upload Data</Button>
           </div>
         )}
       </div>

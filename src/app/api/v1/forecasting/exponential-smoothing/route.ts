@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/db'
 
 function parseCSV(csvText: string): any[] {
   const lines = csvText.trim().split('\n')
@@ -124,6 +125,25 @@ export async function POST(req: NextRequest) {
       actual: timeSeriesData[i],
       forecast: i > 0 ? timeSeriesData[i - 1] : timeSeriesData[0]
     }))
+
+    // Save to database for RAG
+    const userEmail = session.user?.email || 'unknown'
+    try {
+      await prisma.forecastResult.create({
+        data: {
+          name: `Exponential Smoothing - ${valueColumn}`,
+          method: 'exponential-smoothing',
+          dateColumn: dateKey,
+          valueColumn: valueColumn,
+          periods: periods,
+          forecastData: JSON.stringify({ historical, forecast }),
+          historicalData: JSON.stringify(timeSeriesData),
+          createdBy: userEmail
+        }
+      })
+    } catch (saveError) {
+      console.error('Failed to save forecast result:', saveError)
+    }
 
     return NextResponse.json({
       success: true,

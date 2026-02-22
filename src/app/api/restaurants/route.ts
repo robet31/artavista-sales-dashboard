@@ -21,7 +21,18 @@ export async function GET(req: NextRequest) {
       orderBy: { name: 'asc' }
     })
 
-    return NextResponse.json(restaurants)
+    const formattedRestaurants = restaurants.map(r => ({
+      id: r.id,
+      name: r.name,
+      code: r.code,
+      location: r.location || '',
+      description: r.description || '',
+      isActive: r.isActive,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt
+    }))
+
+    return NextResponse.json({ restaurants: formattedRestaurants })
 
   } catch (error) {
     console.error('Restaurants error:', error)

@@ -1,72 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: transactions, error } = await supabase
+      .from('transaction')
+      .select(`
+        *,
+        retailer(retailer_name),
+        product(product),
+        city(city),
+        method(method)
+      `)
+      .limit(10000)
+
+    if (error) {
+      console.log('Transaction table error (may not exist):', error.message)
     }
 
-    const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
-    const userRestaurantId = (session.user as any)?.restaurantId
-    const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
+    const { data: retailers } = await supabase
+      .from('retailer')
+      .select('*')
+      
+    const { data: products } = await supabase
+      .from('product')
+      .select('*')
 
-    const whereClause: any = {}
-    
-    if (!isSuperAdmin && userRestaurantId) {
-      whereClause.restaurantId = userRestaurantId
-    }
+    const { data: cities } = await supabase
+      .from('city')
+      .select('*')
 
-    const data = await prisma.deliveryData.findMany({
-      where: whereClause,
-      select: {
-        orderId: true,
-        orderTime: true,
-        deliveryTime: true,
-        orderMonth: true,
-        orderHour: true,
-        pizzaSize: true,
-        pizzaType: true,
-        toppingsCount: true,
-        distanceKm: true,
-        trafficLevel: true,
-        paymentMethod: true,
-        estimatedDuration: true,
-        isDelayed: true,
-        delayMin: true,
-        location: true
-      },
-      orderBy: { orderTime: 'desc' },
-      take: 10000
-    })
+    const data = (transactions || []).map((t: any) => ({
+      id_transaction: t.id_transaction,
+      id_retailer: t.id_retailer,
+      retailer_name: t.retailer?.retailer_name || '',
+      product: t.product?.product || '',
+      method: t.method?.method || '',
+      city: t.city?.city || '',
+      invoice_date: t.invoice_date,
+      price_per_unit: t.price_per_unit,
+      unit_sold: t.unit_sold,
+      total_sales: t.total_sales,
+      operating_profit: t.operating_profit,
+      operating_margin: t.operating_margin,
+      order_count: 1
+    }))
 
     return NextResponse.json({
       success: true,
-      data: data.map(d => ({
-        order_id: d.orderId,
-        order_date: d.orderTime ? new Date(d.orderTime).toISOString().split('T')[0] : '',
-        order_time: d.orderTime ? new Date(d.orderTime).toISOString() : '',
-        delivery_time: d.deliveryTime ? new Date(d.deliveryTime).toISOString() : '',
-        month: d.orderMonth || '',
-        hour: d.orderHour,
-        pizza_size: d.pizzaSize || '',
-        pizza_type: d.pizzaType || '',
-        toppings_count: d.toppingsCount,
-        distance_km: d.distanceKm,
-        traffic_level: d.trafficLevel || '',
-        payment_method: d.paymentMethod || '',
-        estimated_duration: d.estimatedDuration,
-        is_delayed: d.isDelayed,
-        delay_min: d.delayMin,
-        location: d.location || ''
-      }))
+      data: data,
+      stats: {
+        transactions: data.length,
+        retailers: (retailers || []).length,
+        products: (products || []).length,
+        cities: (cities || []).length
+      }
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('All-data error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ 
+      success: true,
+      data: [],
+      stats: { transactions: 0, retailers: 0, products: 0, cities: 0 },
+      message: 'Database may not be ready yet'
+    })
   }
 }

@@ -23,38 +23,25 @@ export interface Restaurant {
   updatedAt: Date
 }
 
-export interface DeliveryData {
+export interface SalesData {
   id: string
-  orderId: string
-  restaurantId: string
-  location: string
-  orderTime: Date
-  deliveryTime: Date
-  deliveryDuration: number
-  orderMonth: string
-  orderHour: number
-  pizzaSize: string
-  pizzaType: string
-  toppingsCount: number
-  pizzaComplexity: number
-  toppingDensity?: number | null
-  distanceKm: number
-  trafficLevel: string
-  trafficImpact: number
-  isPeakHour: boolean
-  isWeekend: boolean
-  paymentMethod: string
-  paymentCategory: string
-  estimatedDuration: number
-  deliveryEfficiency?: number | null
-  delayMin: number
-  isDelayed: boolean
-  restaurantAvgTime?: number | null
-  uploadedBy: string
-  uploadedAt: Date
-  validatedAt?: Date | null
-  validatedBy?: string | null
-  qualityScore?: number | null
+  retailer_id: string
+  invoice_date: string
+  region: string | null
+  state: string | null
+  city: string | null
+  product: string
+  price_per_unit: number | null
+  units_sold: number | null
+  total_sales: number
+  operating_profit: number
+  operating_margin: number | null
+  sales_method: string | null
+  uploaded_by: string
+  uploaded_at: string
+  validated_at: string | null
+  validated_by: string | null
+  quality_score: number | null
   version: number
 }
 
@@ -90,7 +77,7 @@ export interface ValidationError {
 }
 
 export interface CleansedData {
-  data: Partial<DeliveryData>[]
+  data: Partial<SalesData>[]
   errors: ValidationError[]
   qualityScore: number
 }

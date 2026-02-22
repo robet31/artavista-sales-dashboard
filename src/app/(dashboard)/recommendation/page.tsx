@@ -51,30 +51,30 @@ const questionCategories: QuestionCategory[] = [
     title: 'Statistik Umum',
     icon: <BarChart3 className="w-4 h-4" />,
     questions: [
-      'Berapa total pesanan bulan ini?',
-      'Berapa rata-rata waktu pengiriman?',
-      'Berapa total pesanan hari ini?',
-      'Berapa pesanan yang terlambat?'
+      'Berapa total transaksi bulan ini?',
+      'Berapa total revenue bulan ini?',
+      'Berapa rata-rata nilai transaksi?',
+      'Berapa total profit bulan ini?'
     ]
   },
   {
-    title: 'Menu & Produk',
+    title: 'Produk & Penjualan',
     icon: <Package className="w-4 h-4" />,
     questions: [
-      'Pizza apa yang paling populer?',
-      'Pizza size apa yang paling banyak dipesan?',
-      'Jenis pizza mana yang paling laku?',
-      'Apa topping yang paling banyak dipilih?'
+      'Produk apa yang paling banyak terjual?',
+      'Produk apa dengan revenue tertinggi?',
+      'Produk apa yang perlu perhatian?',
+      'Berapa total unit terjual?'
     ]
   },
   {
-    title: 'Restoran & Lokasi',
+    title: 'Retailer & Lokasi',
     icon: <MapPin className="w-4 h-4" />,
     questions: [
-      'Restoran mana yang paling banyak pesanannya?',
-      'Lokasi mana dengan delivery tercepat?',
-      'Area mana yang paling banyak order?',
-      'Restoran mana dengan rating terbaik?'
+      'Retailer mana dengan penjualan tertinggi?',
+      'Kota mana dengan transaksi tertinggi?',
+      'Region mana yang paling baik?',
+      'Retailer mana yang perlu dievaluasi?'
     ]
   },
   {
@@ -82,18 +82,17 @@ const questionCategories: QuestionCategory[] = [
     icon: <Clock className="w-4 h-4" />,
     questions: [
       'Jam berapa paling banyak pesanan?',
-      'Hari apa yang paling sibuk?',
-      'Bagaimana dampak lalu lintas terhadap delivery?',
-      'Kapan waktu pengiriman tercepat?'
+      'Kapan waktu transaksi tertinggi?',
+      'Bagaimana tren penjualan?'
     ]
   },
   {
     title: 'Pembayaran',
     icon: <CreditCard className="w-4 h-4" />,
     questions: [
-      'Metode pembayaran apa yang paling sering digunakan?',
-      'Berapa transaksi dengan cash?',
-      'Metode pembayaran mana yang paling aman?'
+      'Metode penjualan apa yang paling sering digunakan?',
+      'Metode apa dengan nilai tertinggi?',
+      'Metode pembayaran mana yang paling populer?'
     ]
   },
   {
@@ -101,7 +100,7 @@ const questionCategories: QuestionCategory[] = [
     icon: <TrendingUp className="w-4 h-4" />,
     questions: [
       'Apa insights untuk meningkatkan penjualan?',
-      'Prediksi pesanan minggu depan?',
+      'Prediksi revenue bulan depan?',
       'Bagaimana tren penjualan bulan ini?',
       'Rekomendasi untuk meningkatkan revenue?'
     ]
@@ -110,8 +109,8 @@ const questionCategories: QuestionCategory[] = [
 
 const quickActions = [
   'Ringkasan dashboard',
-  'Pizza terlaris bulan ini',
-  'Performa delivery',
+  'Produk terlaris',
+  'Top retailer',
   'Rekomendasi strategis'
 ]
 
@@ -234,7 +233,7 @@ export default function RecommendationPage() {
                 AI Assistant
               </h1>
               <p className="text-xs md:text-base mt-1" style={{ color: 'rgba(255,255,255,0.8)' }}>
-                Pizza Delivery Insights - Analytics & Forecasting
+                Adidas Sales Insights - Analytics & Recommendation
               </p>
             </div>
             <Badge variant="secondary" className="ml-auto bg-white/20 text-white hover:bg-white/30">
@@ -348,10 +347,10 @@ export default function RecommendationPage() {
                         <Bot className="w-12 h-12 text-blue-600" />
                       </div>
                       <h3 className="text-xl font-bold text-slate-800 mb-3">
-                        Selamat Datang di Pizza AI Assistant
+                        Selamat Datang di Adidas Sales AI Assistant
                       </h3>
                       <p className="text-slate-500 mb-6 max-w-lg text-sm leading-relaxed">
-                        Tanyakan tentang data delivery pizza Anda. Saya dapat membantu menganalisis pesanan, restoran, pizza populer, forecasting, dan memberikan insights bisnis berbasis AI.
+                        Tanyakan tentang data penjualan Adidas Anda. Saya dapat membantu menganalisis transaksi, retailer, produk populer, forecasting, dan memberikan insights bisnis berbasis AI.
                       </p>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl w-full">

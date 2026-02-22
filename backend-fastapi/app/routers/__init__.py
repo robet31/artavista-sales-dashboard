@@ -6,3 +6,4 @@ from .export_clean import router as export_clean_router
 from .forecasting import router as forecasting_router
 from .recommendation import router as recommendation_router
 from .analytics_data import router as analytics_data_router
+from .adidas import router as adidas_router

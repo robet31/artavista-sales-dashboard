@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AlertCircle, Loader2, Lock, User, Facebook, Twitter, Instagram, Mail, CheckCircle } from 'lucide-react'
+import { AlertCircle, Loader2, Lock, User, Facebook, Twitter, Instagram, Mail, CheckCircle, Eye, EyeOff } from 'lucide-react'
 
 export function LoginForm() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -116,20 +117,19 @@ export function LoginForm() {
         <div className="hidden md:flex flex-col w-[45%] relative">
           <img 
             src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?q=80&w=2070&auto=format&fit=crop" 
-            alt="Sunest Systems" 
+            alt="Artavista" 
             className="absolute inset-0 w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-blue-900/70 to-blue-800/70" />
           
           <div className="relative z-10 flex flex-col items-center justify-center h-full text-white p-10 text-center">
-            <div className="flex flex-col items-center">
+            <div className="flex flex-col items-center justify-center">
                <img 
-                 src="/sunest-logo.png" 
-                 alt="Sunest Systems" 
-                 className="w-24 h-24 mb-4 object-contain bg-white/10 rounded-2xl p-2"
+                 src="/Logo Artavista.png" 
+                 alt="Artavista" 
+                 className="w-72 h-auto mb-6 object-contain"
                />
-               <h2 className="text-2xl font-black tracking-[0.2em] uppercase leading-none">Sunest Systems</h2>
-               <p className="text-[10px] font-medium tracking-[0.4em] opacity-90 mt-2">— DELIVERY MONITORING—</p>
+               <p className="text-sm font-medium tracking-widest opacity-90">Sales Monitoring By Artavista Systems</p>
             </div>
             
             
@@ -224,13 +224,20 @@ export function LoginForm() {
                 <Input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-12 h-12 bg-[#F3F4F6] border-none rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/20 placeholder:text-gray-400 text-gray-700 font-medium text-sm"
+                  className="pl-12 pr-12 h-12 bg-[#F3F4F6] border-none rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/20 placeholder:text-gray-400 text-gray-700 font-medium text-sm"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
 
               <div className="pt-2 flex flex-col items-center">

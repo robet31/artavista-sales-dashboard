@@ -12,6 +12,7 @@ from .routers import (
     recommendation_router,
     analytics_data_router,
 )
+from .routers import adidas_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -102,6 +103,8 @@ app.include_router(
 app.include_router(
     analytics_data_router, prefix="/api/v1/analytics-data", tags=["Analytics Data"]
 )
+
+app.include_router(adidas_router)
 
 
 # Run with: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

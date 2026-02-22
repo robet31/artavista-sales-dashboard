@@ -12,28 +12,47 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url)
-    const restaurantId = searchParams.get('restaurant')
+    const retailerId = searchParams.get('restaurant')
 
     const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
     const userRestaurantId = (session.user as any)?.restaurantId
     
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
-    let whereClause: any = {}
-
+    let whereClause = {}
+    
     if (!isSuperAdmin && userRestaurantId) {
-      whereClause.restaurantId = userRestaurantId
-    } else if (restaurantId && restaurantId !== 'all') {
-      whereClause.restaurantId = restaurantId
+      whereClause = { restaurantId: userRestaurantId }
+    } else if (retailerId && retailerId !== 'all') {
+      whereClause = { restaurantId: retailerId }
     }
 
     const orders = await prisma.deliveryData.findMany({
       where: whereClause,
+      include: {
+        restaurant: true
+      },
       orderBy: { orderTime: 'desc' },
       take: 100
     })
 
-    return NextResponse.json(orders)
+    const formattedOrders = orders.map(t => ({
+      id: t.id,
+      transactionId: `TXN-${t.id.substring(0, 8)}`,
+      retailerId: t.restaurantId,
+      retailerName: t.restaurant?.name || '-',
+      productName: t.pizzaType || '-',
+      methodName: t.paymentMethod || '-',
+      cityName: t.location || '-',
+      invoiceDate: t.orderTime,
+      pricePerUnit: t.estimatedDuration,
+      unitSold: t.toppingsCount,
+      totalSales: t.deliveryDuration * 10,
+      operatingProfit: t.distanceKm,
+      operatingMargin: t.deliveryEfficiency
+    }))
+
+    return NextResponse.json(formattedOrders)
   } catch (error) {
     console.error('Get orders error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -52,48 +71,42 @@ export async function POST(req: NextRequest) {
     const userRestaurantId = (session.user as any)?.restaurantId
     const userId = (session.user as any)?.id || session.user?.email || 'unknown'
 
-    const restaurantId = userRestaurantId || body.restaurantId
+    const retailerId = userRestaurantId || body.retailerId
 
-    if (!restaurantId) {
-      return NextResponse.json({ error: 'Restaurant ID diperlukan' }, { status: 400 })
+    if (!retailerId) {
+      return NextResponse.json({ error: 'Retailer ID diperlukan' }, { status: 400 })
     }
 
-    const order = await prisma.deliveryData.create({
+    const newOrder = await prisma.deliveryData.create({
       data: {
-        orderId: body.orderId,
-        restaurantId,
-        location: body.location || '',
-        orderTime: new Date(body.orderTime),
-        deliveryTime: new Date(body.deliveryTime),
-        deliveryDuration: body.deliveryDuration || 30,
-        orderMonth: body.orderMonth || 'January',
-        orderHour: body.orderHour || 0,
-        pizzaSize: body.pizzaSize || 'Medium',
-        pizzaType: body.pizzaType || 'Margherita',
-        toppingsCount: body.toppingsCount || 0,
-        pizzaComplexity: 0,
-        distanceKm: body.distanceKm || 0,
-        trafficLevel: body.trafficLevel || 'Medium',
-        trafficImpact: 1,
-        isPeakHour: body.isPeakHour || false,
-        isWeekend: body.isWeekend || false,
-        paymentMethod: body.paymentMethod || 'Cash',
-        paymentCategory: 'Offline',
-        estimatedDuration: body.deliveryDuration || 30,
-        deliveryEfficiency: null,
-        delayMin: body.isDelayed ? 10 : 0,
-        isDelayed: body.isDelayed || false,
-        restaurantAvgTime: null,
-        uploadedBy: userId,
-        uploadedAt: new Date(),
-        validatedAt: new Date(),
-        validatedBy: userId,
-        qualityScore: 100,
-        version: 1
+        orderId: `ORD-${Date.now()}`,
+        restaurantId: retailerId,
+        location: body.cityName || 'Unknown',
+        orderTime: new Date(body.invoiceDate || new Date()),
+        deliveryTime: new Date(),
+        deliveryDuration: body.totalSales ? Math.round(body.totalSales / 10) : 30,
+        orderMonth: new Date().toISOString().slice(0, 7),
+        orderHour: new Date().getHours(),
+        pizzaSize: 'Medium',
+        pizzaType: body.productName || 'Unknown',
+        toppingsCount: body.unitSold || 1,
+        pizzaComplexity: 1,
+        distanceKm: body.operatingProfit || 1,
+        trafficLevel: 'Normal',
+        trafficImpact: 0,
+        isPeakHour: false,
+        isWeekend: false,
+        paymentMethod: body.methodName || 'Cash',
+        paymentCategory: 'Cash',
+        estimatedDuration: body.pricePerUnit || 30,
+        deliveryEfficiency: body.operatingMargin || 0.8,
+        delayMin: 0,
+        isDelayed: false,
+        uploadedBy: userId
       }
     })
 
-    return NextResponse.json(order)
+    return NextResponse.json(newOrder)
   } catch (error: any) {
     console.error('Create order error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
@@ -130,34 +143,24 @@ export async function PUT(req: NextRequest) {
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
     if (!isSuperAdmin && userRestaurantId && existingOrder.restaurantId !== userRestaurantId) {
-      return NextResponse.json({ error: 'Tidak berhak mengubah data restoran lain' }, { status: 403 })
+      return NextResponse.json({ error: 'Tidak berhak mengubah data retailer lain' }, { status: 403 })
     }
 
-    const order = await prisma.deliveryData.update({
+    const updatedOrder = await prisma.deliveryData.update({
       where: { id },
       data: {
-        orderId: body.orderId,
-        location: body.location,
-        orderTime: new Date(body.orderTime),
-        deliveryTime: new Date(body.deliveryTime),
-        deliveryDuration: body.deliveryDuration,
-        orderMonth: body.orderMonth,
-        orderHour: body.orderHour,
-        pizzaSize: body.pizzaSize,
-        pizzaType: body.pizzaType,
-        toppingsCount: body.toppingsCount,
-        distanceKm: body.distanceKm,
-        trafficLevel: body.trafficLevel,
-        isPeakHour: body.isPeakHour,
-        isWeekend: body.isWeekend,
-        paymentMethod: body.paymentMethod,
-        isDelayed: body.isDelayed,
-        delayMin: body.isDelayed ? 10 : 0,
-        version: { increment: 1 }
+        location: body.cityName || existingOrder.location,
+        pizzaType: body.productName || existingOrder.pizzaType,
+        paymentMethod: body.methodName || existingOrder.paymentMethod,
+        deliveryDuration: body.totalSales ? Math.round(body.totalSales / 10) : existingOrder.deliveryDuration,
+        estimatedDuration: body.pricePerUnit ?? existingOrder.estimatedDuration,
+        toppingsCount: body.unitSold ?? existingOrder.toppingsCount,
+        distanceKm: body.operatingProfit ?? existingOrder.distanceKm,
+        deliveryEfficiency: body.operatingMargin ?? existingOrder.deliveryEfficiency
       }
     })
 
-    return NextResponse.json(order)
+    return NextResponse.json(updatedOrder)
   } catch (error: any) {
     console.error('Update order error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
@@ -193,7 +196,7 @@ export async function DELETE(req: NextRequest) {
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
     if (!isSuperAdmin && userRestaurantId && existingOrder.restaurantId !== userRestaurantId) {
-      return NextResponse.json({ error: 'Tidak berhak menghapus data restoran lain' }, { status: 403 })
+      return NextResponse.json({ error: 'Tidak berhak menghapus data retailer lain' }, { status: 403 })
     }
 
     await prisma.deliveryData.delete({
