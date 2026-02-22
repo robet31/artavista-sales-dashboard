@@ -301,7 +301,7 @@ export default function OrdersPage() {
                 <SelectContent>
                   <SelectItem value="all">Semua Retailer</SelectItem>
                   {(masterData.retailers || []).map((r: any) => (
-                    <SelectItem key={r.id} value={r.id?.toString()}>
+                    <SelectItem key={r.id_retailer || r.id} value={String(r.id_retailer || r.id)}>
                       {r.retailer_name} ({r.code})
                     </SelectItem>
                   ))}
@@ -448,7 +448,7 @@ export default function OrdersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         {(masterData.retailers || []).map((r: any) => (
-                          <SelectItem key={r.id} value={r.id?.toString()}>{r.retailer_name}</SelectItem>
+                          <SelectItem key={r.id_retailer || r.id} value={String(r.id_retailer || r.id)}>{r.retailer_name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

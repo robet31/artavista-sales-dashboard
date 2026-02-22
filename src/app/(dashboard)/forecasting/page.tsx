@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { 
@@ -21,19 +21,113 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer,
-  Area,
-  ComposedChart,
-  Brush
-} from 'recharts'
+import * as echarts from 'echarts'
+
+interface ChartDataPoint {
+  name: string
+  Aktual: number
+  Prediksi: number | null
+  isForecast?: boolean
+}
+
+function simpleFormatValue(val: number): string {
+  if (val >= 1000000000) return `Rp ${(val / 1000000000).toFixed(1)} M`
+  if (val >= 1000000) return `Rp ${(val / 1000000).toFixed(1)} JT`
+  if (val >= 1000) return `${(val / 1000).toFixed(0)} RB`
+  return val.toLocaleString('id-ID')
+}
+
+function ForecastChart({ chartData }: { chartData: ChartDataPoint[] }) {
+  const chartRef = useRef<HTMLDivElement>(null)
+  const chartInstance = useRef<echarts.ECharts | null>(null)
+
+  useEffect(() => {
+    if (!chartRef.current) return
+    chartInstance.current = echarts.init(chartRef.current)
+    return () => chartInstance.current?.dispose()
+  }, [])
+
+  useEffect(() => {
+    if (!chartInstance.current || !chartData.length) return
+
+    const actualData = chartData.filter(d => !d.isForecast).map(d => d.Aktual)
+    const forecastData = chartData.map(d => d.isForecast ? d.Prediksi : null)
+
+    const option: echarts.EChartsOption = {
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: '#fff',
+        borderColor: '#e2e8f0',
+        borderWidth: 1,
+        textStyle: { color: '#334155' },
+        formatter: (params: any) => {
+          const val = params[0]
+          return `<div style="font-weight:600">${val.name}</div><div>${val.value > 0 ? simpleFormatValue(val.value) : '-'}</div>`
+        }
+      },
+      legend: {
+        data: ['Data Aktual', 'Prediksi'],
+        bottom: 0,
+        textStyle: { color: '#64748b' }
+      },
+      grid: { left: 60, right: 30, top: 20, bottom: 60 },
+      xAxis: {
+        type: 'category',
+        data: chartData.map(d => d.name),
+        boundaryGap: false,
+        axisLabel: { color: '#64748b', fontSize: 10, rotate: chartData.length > 8 ? 35 : 0 },
+        axisLine: { lineStyle: { color: '#cbd5e1' } }
+      },
+      yAxis: {
+        type: 'value',
+        axisLabel: { color: '#64748b', fontSize: 11, formatter: (v: number) => simpleFormatValue(v) },
+        splitLine: { lineStyle: { color: '#e2e8f0', type: 'dashed' } }
+      },
+      series: [
+        {
+          name: 'Data Aktual',
+          type: 'line',
+          data: actualData,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 8,
+          itemStyle: { color: '#3b82f6' },
+          lineStyle: { width: 3 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#3b82f640' },
+              { offset: 1, color: '#3b82f605' }
+            ])
+          }
+        },
+        {
+          name: 'Prediksi',
+          type: 'line',
+          data: forecastData,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 8,
+          itemStyle: { color: '#10b981' },
+          lineStyle: { width: 3, type: 'dashed' as any },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#10b98140' },
+              { offset: 1, color: '#10b98105' }
+            ])
+          }
+        }
+      ],
+      animationDuration: 1500
+    }
+
+    chartInstance.current.setOption(option, true)
+    const handleResize = () => chartInstance.current?.resize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [chartData])
+
+  return <div ref={chartRef} style={{ width: '100%', height: '400px' }} />
+}
 
 interface ForecastResult {
   success?: boolean
@@ -279,7 +373,7 @@ export default function ForecastingPage() {
       case 'moving-average':
         return 'Moving Average: Metode rata-rata bergerak yang menghitung rata-rata dari beberapa periode terakhir. Cocok untuk data yang stabil.'
       case 'linear-trend':
-        return 'Linear Trend: Metode garis lurus yang menunjukkan kecenderungan umum data. Cocok untuk data dengan tren naik/turun stabil.'
+        return 'Holt Winter: Metode peramalan yang menggabungkan level, tren, dan seasonality. Cocok untuk data dengan pola musiman.'
       default:
         return ''
     }
@@ -407,7 +501,7 @@ export default function ForecastingPage() {
                       <SelectContent>
                         <SelectItem value="exponential-smoothing">📈 Exponential Smoothing</SelectItem>
                         <SelectItem value="moving-average">📊 Moving Average</SelectItem>
-                        <SelectItem value="linear-trend">📉 Linear Trend</SelectItem>
+                        <SelectItem value="linear-trend">📉 Holt Winter</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -463,30 +557,7 @@ export default function ForecastingPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="w-full h-[500px] overflow-hidden">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                          <defs>
-                            <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05}/>
-                            </linearGradient>
-                            <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#10b981" stopOpacity={0.05}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} tickLine={{ stroke: '#cbd5e1' }} axisLine={{ stroke: '#cbd5e1' }} interval={0} height={60} />
-                          <YAxis tick={{ fontSize: 11, fill: '#64748b' }} tickLine={{ stroke: '#cbd5e1' }} axisLine={{ stroke: '#cbd5e1' }} />
-                          <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', padding: '12px' }} formatter={(value, name) => [Number(value) > 0 ? formatValue(Number(value)) : '-', name === 'Aktual' ? '📊 Data Aktual' : '🔮 Prediksi']} labelStyle={{ color: '#1e293b', fontWeight: 600, marginBottom: '8px' }} />
-                          <Legend wrapperStyle={{ paddingTop: '20px' }} formatter={(value: string) => <span style={{ color: '#334155', fontWeight: 500 }}>{value === 'Aktual' ? '📊 Data Aktual' : '🔮 Prediksi'}</span>} />
-                          <Area type="monotone" dataKey="Aktual" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorActual)" name="Aktual" dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }} activeDot={{ r: 8, stroke: '#3b82f6', strokeWidth: 3, fill: '#fff' }} />
-                          <Line type="monotone" dataKey="Prediksi" stroke="#10b981" strokeWidth={3} strokeDasharray="8 4" dot={{ fill: '#10b981', strokeWidth: 2, r: 6, stroke: '#fff' }} activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 3, fill: '#fff' }} name="Prediksi" connectNulls />
-                          <Brush dataKey="name" height={40} stroke="#3b82f6" fill="#f1f5f9" tickFormatter={(value) => value.length > 8 ? value.substring(0, 6) + '..' : value} startIndex={Math.max(0, chartData.length - 15)} endIndex={chartData.length - 1} />
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <ForecastChart chartData={chartData} />
                     
                     {trend && (
                       <div className="mt-4 flex items-center justify-center gap-2 p-3 bg-slate-100 rounded-lg">

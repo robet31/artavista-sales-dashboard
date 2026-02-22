@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,32 +16,28 @@ export async function GET(req: NextRequest) {
     
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
-    let whereClause = {}
-    
+    let query = supabase
+      .from('transaction')
+      .select('*')
+
     if (!isSuperAdmin && userRestaurantId) {
-      whereClause = { restaurantId: userRestaurantId }
+      query = query.eq('id_retailer', parseInt(userRestaurantId))
     }
 
-    const transactions = await prisma.deliveryData.findMany({
-      where: whereClause,
-      orderBy: { orderTime: 'desc' },
-      take: 10000
-    })
+    const { data: transactions, error } = await query
 
-    const totalOrders = transactions.length
-    const totalRevenue = transactions.reduce((sum, t) => sum + (t.deliveryDuration * 10 || 0), 0)
-    const totalDistance = transactions.reduce((sum, t) => sum + (t.distanceKm || 0), 0)
-    const avgDeliveryTime = transactions.length > 0 
-      ? transactions.reduce((sum, t) => sum + (t.deliveryDuration || 0), 0) / transactions.length 
-      : 0
+    if (error) throw error
+
+    const totalOrders = (transactions || []).length
+    const totalRevenue = (transactions || []).reduce((sum, t) => sum + (t.total_sales || 0), 0)
+    const totalProfit = (transactions || []).reduce((sum, t) => sum + (t.operating_profit || 0), 0)
 
     return NextResponse.json({
       success: true,
       total_orders: totalOrders,
       total_revenue: totalRevenue,
-      avg_order_value: totalOrders > 0 ? totalRevenue / totalOrders : 0,
-      total_distance: totalDistance,
-      avg_delivery_time: avgDeliveryTime
+      total_profit: totalProfit,
+      avg_order_value: totalOrders > 0 ? totalRevenue / totalOrders : 0
     })
   } catch (error: any) {
     console.error('Summary error:', error)

@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import bcrypt from 'bcryptjs'
-import { prisma } from './db'
+import { supabase } from './supabase'
+import crypto from 'crypto'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,24 +17,36 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email }
-          })
+          const { data: users, error } = await supabase
+            .from('app_users')
+            .select('*')
+            .eq('email', credentials.email)
+            .limit(1)
 
-          if (!user || !user.isActive) {
+          if (error || !users || users.length === 0) {
+            console.log('User not found:', error)
             return null
           }
 
-          const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
+          const user = users[0]
 
-          if (!isPasswordValid) {
+          if (!user.is_active) {
+            console.log('User is inactive')
             return null
           }
 
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { lastLogin: new Date() }
-          })
+          // Hash password with MD5 (same as registration)
+          const hashedPassword = crypto.createHash('md5').update(credentials.password).digest('hex')
+
+          if (user.password !== hashedPassword) {
+            console.log('Password mismatch')
+            return null
+          }
+
+          await supabase
+            .from('app_users')
+            .update({ last_login: new Date().toISOString() })
+            .eq('id', user.id)
 
           return {
             id: user.id,
@@ -42,7 +54,7 @@ export const authOptions: NextAuthOptions = {
             name: user.name,
             role: user.role,
             position: user.position,
-            restaurantId: user.restaurantId
+            restaurant_id: user.restaurant_id
           }
         } catch (error) {
           console.error('Auth error:', error)
@@ -61,7 +73,7 @@ export const authOptions: NextAuthOptions = {
         token.id = `${user.id}`
         token.role = (user as any).role
         token.position = (user as any).position
-        token.restaurantId = (user as any).restaurantId
+        token.restaurantId = (user as any).restaurant_id
       }
       return token
     },

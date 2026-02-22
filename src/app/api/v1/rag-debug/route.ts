@@ -1,33 +1,43 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 
 export async function GET() {
   try {
-    const totalCount = await prisma.deliveryData.count()
-    const restaurantCount = await prisma.restaurant.count()
-    
-    const summary = await prisma.deliveryData.aggregate({
-      _avg: { deliveryDuration: true, delayMin: true, distanceKm: true }
-    })
+    const { count: transactionCount } = await supabase
+      .from('transaction')
+      .select('*', { count: 'exact', head: true })
 
-    const sampleOrders = await prisma.deliveryData.findMany({
-      take: 5,
-      orderBy: { orderTime: 'desc' }
-    })
+    const { count: retailerCount } = await supabase
+      .from('retailer')
+      .select('*', { count: 'exact', head: true })
+
+    const { data: transactions } = await supabase
+      .from('transaction')
+      .select('total_sales, operating_profit, operating_margin')
+      .limit(100)
+
+    const avgSales = transactions?.length 
+      ? transactions.reduce((sum, t) => sum + (t.total_sales || 0), 0) / transactions.length 
+      : 0
+
+    const { data: sampleTransactions } = await supabase
+      .from('transaction')
+      .select('*, retailer(retailer_name), product(product)')
+      .limit(5)
+      .order('invoice_date', { ascending: false })
 
     return NextResponse.json({ 
       message: 'RAG Database Debug',
-      database: 'Neon PostgreSQL',
-      totalDeliveryData: totalCount,
-      totalRestaurants: restaurantCount,
-      avgDeliveryDuration: summary._avg.deliveryDuration,
-      avgDelay: summary._avg.delayMin,
-      sampleOrders: sampleOrders.map(o => ({
-        orderId: o.orderId,
-        pizzaType: o.pizzaType,
-        location: o.location,
-        deliveryDuration: o.deliveryDuration
-      }))
+      database: 'Supabase PostgreSQL',
+      totalTransactions: transactionCount || 0,
+      totalRetailers: retailerCount || 0,
+      avgSales,
+      sampleTransactions: sampleTransactions?.map(t => ({
+        id: t.id_transaction,
+        retailer: (t as any).retailer?.retailer_name,
+        product: (t as any).product?.product,
+        totalSales: t.total_sales
+      })) || []
     })
   } catch (error: any) {
     return NextResponse.json({ 

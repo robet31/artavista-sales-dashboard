@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
-import bcrypt from 'bcryptjs'
+import { supabase } from '@/lib/supabase'
+import crypto from 'crypto'
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,51 +15,35 @@ export async function GET(req: NextRequest) {
     const userRole = (session.user as any).role || (session.user as any).position || 'STAFF'
     const userRestaurantId = (session.user as any)?.restaurantId
     
-    const isManager = userRole === 'MANAGER'
-    const isAsman = userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER'
+    const isManager = userRole === 'MANAGER' || userRole === 'REGIONAL_MANAGER'
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
-    let whereClause: any = {}
+    let query = supabase
+      .from('app_users')
+      .select(`
+        *,
+        retailer(retailer_name)
+      `)
+      .order('created_at', { ascending: false })
 
-    // Managers and ASMAN/ASISTEN_MANAGER can see all STAFF and ASISTEN_MANAGER in their restaurant
-    if (isManager || isAsman) {
-      whereClause = {
-        role: { in: ['STAFF', 'ASISTEN_MANAGER'] }
-      }
-      if (!isSuperAdmin && userRestaurantId) {
-        whereClause.restaurantId = userRestaurantId
-      }
-    } else if (isSuperAdmin) {
-      // Super admin can see all
-      whereClause = {}
-    } else {
-      // Regular staff can only see their own data
-      whereClause.id = (session.user as any).id
+    // Managers can see STAFF in their restaurant
+    if (isManager && !isSuperAdmin && userRestaurantId) {
+      query = query.eq('restaurant_id', userRestaurantId)
     }
 
-    const staff = await prisma.user.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        position: true,
-        isActive: true,
-        createdAt: true,
-        restaurant: {
-          select: {
-            name: true,
-            code: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    const { data: staff, error } = await query
 
-    const formattedStaff = staff.map(s => ({
-      ...s,
-      restaurantName: s.restaurant?.name,
-      restaurantCode: s.restaurant?.code
+    if (error) throw error
+
+    const formattedStaff = (staff || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      position: s.position,
+      isActive: s.is_active,
+      createdAt: s.created_at,
+      restaurantName: s.retailer?.retailer_name,
+      restaurantCode: s.retailer?.retailer_name?.substring(0, 3).toUpperCase()
     }))
 
     return NextResponse.json(formattedStaff)
@@ -80,10 +64,9 @@ export async function POST(req: NextRequest) {
     const userRole = (session.user as any).role || (session.user as any).position
     const userRestaurantId = (session.user as any)?.restaurantId
 
-    const isManager = userRole === 'MANAGER'
-    const isAsman = userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER'
+    const isManager = userRole === 'MANAGER' || userRole === 'REGIONAL_MANAGER'
 
-    if (!isManager && !isAsman) {
+    if (!isManager) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -94,53 +77,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Nama, email, dan password wajib diisi' }, { status: 400 })
     }
 
-    // Check if email already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
-
-    if (existingUser) {
-      return NextResponse.json({ error: 'Email sudah terdaftar' }, { status: 400 })
-    }
-
-    // Determine new staff role and position
-    let newStaffRole = 'STAFF'
-    let newStaffPosition = 'STAFF'
-    
-    // MANAGER can create ASISTEN_MANAGER or STAFF (not another MANAGER)
-    if (position === 'ASISTEN_MANAGER') {
-      if (userRole !== 'MANAGER') {
-        return NextResponse.json({ error: 'Tidak berhak membuat akun Asisten Manager' }, { status: 403 })
-      }
-      newStaffRole = 'ASISTEN_MANAGER'
-      newStaffPosition = 'ASISTEN_MANAGER'
-    }
-    // STAFF is default
+    // Hash password with MD5
+    const hashedPassword = crypto.createHash('md5').update(password).digest('hex')
 
     // Use manager's restaurant if not specified
-    const targetRestaurantId = restaurantId || userRestaurantId
+    const targetRestaurantId = restaurantId ? parseInt(restaurantId) : (userRestaurantId ? parseInt(userRestaurantId) : null)
 
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    const staff = await prisma.user.create({
-      data: {
+    const { data, error } = await supabase
+      .from('app_users')
+      .insert([{
         name,
         email,
         password: hashedPassword,
-        role: newStaffRole,
-        position: newStaffPosition,
-        restaurantId: targetRestaurantId,
-        isActive: true
+        role: 'STAFF',
+        position: position || 'STAFF',
+        restaurant_id: targetRestaurantId,
+        is_active: true
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      if (error.message.includes('unique')) {
+        return NextResponse.json({ error: 'Email sudah terdaftar' }, { status: 400 })
       }
-    })
+      throw error
+    }
 
     return NextResponse.json({
-      id: staff.id,
-      name: staff.name,
-      email: staff.email,
-      position: staff.position,
-      isActive: staff.isActive,
-      createdAt: staff.createdAt
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      position: data.position,
+      isActive: data.is_active,
+      createdAt: data.created_at
     })
   } catch (error: any) {
     console.error('Create staff error:', error)
@@ -163,43 +133,44 @@ export async function PUT(req: NextRequest) {
     const userRole = (session.user as any).role || (session.user as any).position
     const userRestaurantId = (session.user as any)?.restaurantId
 
-    const isManager = userRole === 'MANAGER'
-    const isAsman = userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER'
+    const isManager = userRole === 'MANAGER' || userRole === 'REGIONAL_MANAGER'
 
-    if (!isManager && !isAsman) {
+    if (!isManager) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
     if (toggle === 'true') {
-      // Toggle active status
       if (!id) {
         return NextResponse.json({ error: 'Staff ID diperlukan' }, { status: 400 })
       }
 
-      const existingStaff = await prisma.user.findUnique({
-        where: { id }
-      })
+      // Get current staff
+      const { data: existingStaff, error: fetchError } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('id', id)
+        .single()
 
-      if (!existingStaff) {
+      if (fetchError || !existingStaff) {
         return NextResponse.json({ error: 'Staff tidak ditemukan' }, { status: 404 })
       }
 
-      // Check if staff belongs to same restaurant
-      if (existingStaff.restaurantId !== userRestaurantId && userRole !== 'MANAGER' && userRole !== 'ASMAN' && userRole !== 'ASISTEN_MANAGER') {
-        return NextResponse.json({ error: 'Tidak berhak mengubah staff lain' }, { status: 403 })
-      }
+      // Toggle active status
+      const { data, error } = await supabase
+        .from('app_users')
+        .update({ is_active: !existingStaff.is_active })
+        .eq('id', id)
+        .select()
+        .single()
 
-      const updated = await prisma.user.update({
-        where: { id },
-        data: { isActive: !existingStaff.isActive }
-      })
+      if (error) throw error
 
       return NextResponse.json({
-        id: updated.id,
-        name: updated.name,
-        email: updated.email,
-        position: updated.position,
-        isActive: updated.isActive
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        position: data.position,
+        isActive: data.is_active
       })
     }
 
@@ -211,44 +182,31 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const { name, email, password, position } = body
 
-    const existingStaff = await prisma.user.findUnique({
-      where: { id }
-    })
-
-    if (!existingStaff) {
-      return NextResponse.json({ error: 'Staff tidak ditemukan' }, { status: 404 })
-    }
-
-    // Check if staff belongs to same restaurant
-    if (existingStaff.restaurantId !== userRestaurantId && userRole !== 'MANAGER' && userRole !== 'ASMAN' && userRole !== 'ASISTEN_MANAGER') {
-      return NextResponse.json({ error: 'Tidak berhak mengubah staff lain' }, { status: 403 })
-    }
-
-    const updateData: any = {
-      name: name || existingStaff.name,
-      email: email || existingStaff.email,
-    }
-
+    const updateData: any = {}
+    if (name) updateData.name = name
+    if (email) updateData.email = email
     if (password) {
-      updateData.password = await bcrypt.hash(password, 10)
+      updateData.password = crypto.createHash('md5').update(password).digest('hex')
     }
-
-    if (position && (userRole === 'MANAGER' || userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER')) {
-      updateData.role = position
+    if (position) {
       updateData.position = position
     }
 
-    const updated = await prisma.user.update({
-      where: { id },
-      data: updateData
-    })
+    const { data, error } = await supabase
+      .from('app_users')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) throw error
 
     return NextResponse.json({
-      id: updated.id,
-      name: updated.name,
-      email: updated.email,
-      position: updated.position,
-      isActive: updated.isActive
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      position: data.position,
+      isActive: data.is_active
     })
   } catch (error: any) {
     console.error('Update staff error:', error)
@@ -270,10 +228,9 @@ export async function DELETE(req: NextRequest) {
     const userRole = (session.user as any).role || (session.user as any).position
     const userRestaurantId = (session.user as any)?.restaurantId
 
-    const isManager = userRole === 'MANAGER'
-    const isAsman = userRole === 'ASMAN' || userRole === 'ASISTEN_MANAGER'
+    const isManager = userRole === 'MANAGER' || userRole === 'REGIONAL_MANAGER'
 
-    if (!isManager && !isAsman) {
+    if (!isManager) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -281,27 +238,24 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Staff ID diperlukan' }, { status: 400 })
     }
 
-    const existingStaff = await prisma.user.findUnique({
-      where: { id }
-    })
-
-    if (!existingStaff) {
-      return NextResponse.json({ error: 'Staff tidak ditemukan' }, { status: 404 })
-    }
-
-    // Check if staff belongs to same restaurant
-    if (existingStaff.restaurantId !== userRestaurantId && userRole !== 'MANAGER' && userRole !== 'ASMAN' && userRole !== 'ASISTEN_MANAGER') {
-      return NextResponse.json({ error: 'Tidak berhak menghapus staff lain' }, { status: 403 })
-    }
-
     // Can't delete yourself
-    if (existingStaff.email === session.user?.email) {
+    const currentEmail = session.user?.email
+    const { data: existingStaff } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', id)
+      .single()
+
+    if (existingStaff?.email === currentEmail) {
       return NextResponse.json({ error: 'Tidak dapat menghapus akun sendiri' }, { status: 400 })
     }
 
-    await prisma.user.delete({
-      where: { id }
-    })
+    const { error } = await supabase
+      .from('app_users')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
 
     return NextResponse.json({ message: 'Staff dihapus' })
   } catch (error: any) {

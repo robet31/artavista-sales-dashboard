@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(req: NextRequest) {
   try {
@@ -19,37 +19,42 @@ export async function GET(req: NextRequest) {
     
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
-    let whereClause = {}
-    
+    let query = supabase
+      .from('transaction')
+      .select(`
+        *,
+        retailer(retailer_name),
+        product(product),
+        method(method),
+        city(city)
+      `)
+      .order('invoice_date', { ascending: false })
+      .limit(100)
+
     if (!isSuperAdmin && userRestaurantId) {
-      whereClause = { restaurantId: userRestaurantId }
+      query = query.eq('id_retailer', parseInt(userRestaurantId))
     } else if (retailerId && retailerId !== 'all') {
-      whereClause = { restaurantId: retailerId }
+      query = query.eq('id_retailer', parseInt(retailerId))
     }
 
-    const orders = await prisma.deliveryData.findMany({
-      where: whereClause,
-      include: {
-        restaurant: true
-      },
-      orderBy: { orderTime: 'desc' },
-      take: 100
-    })
+    const { data: orders, error } = await query
 
-    const formattedOrders = orders.map(t => ({
-      id: t.id,
-      transactionId: `TXN-${t.id.substring(0, 8)}`,
-      retailerId: t.restaurantId,
-      retailerName: t.restaurant?.name || '-',
-      productName: t.pizzaType || '-',
-      methodName: t.paymentMethod || '-',
-      cityName: t.location || '-',
-      invoiceDate: t.orderTime,
-      pricePerUnit: t.estimatedDuration,
-      unitSold: t.toppingsCount,
-      totalSales: t.deliveryDuration * 10,
-      operatingProfit: t.distanceKm,
-      operatingMargin: t.deliveryEfficiency
+    if (error) throw error
+
+    const formattedOrders = (orders || []).map(t => ({
+      id: t.id_transaction,
+      transactionId: `TXN-${t.id_transaction}`,
+      retailerId: t.id_retailer,
+      retailerName: (t as any).retailer?.retailer_name || '-',
+      productName: (t as any).product?.product || '-',
+      methodName: (t as any).method?.method || '-',
+      cityName: (t as any).city?.city || '-',
+      invoiceDate: t.invoice_date,
+      pricePerUnit: t.price_per_unit,
+      unitSold: t.unit_sold,
+      totalSales: t.total_sales,
+      operatingProfit: t.operating_profit,
+      operatingMargin: t.operating_margin
     }))
 
     return NextResponse.json(formattedOrders)
@@ -71,42 +76,32 @@ export async function POST(req: NextRequest) {
     const userRestaurantId = (session.user as any)?.restaurantId
     const userId = (session.user as any)?.id || session.user?.email || 'unknown'
 
-    const retailerId = userRestaurantId || body.retailerId
+    const retailerId = userRestaurantId ? parseInt(userRestaurantId) : body.retailerId
 
     if (!retailerId) {
       return NextResponse.json({ error: 'Retailer ID diperlukan' }, { status: 400 })
     }
 
-    const newOrder = await prisma.deliveryData.create({
-      data: {
-        orderId: `ORD-${Date.now()}`,
-        restaurantId: retailerId,
-        location: body.cityName || 'Unknown',
-        orderTime: new Date(body.invoiceDate || new Date()),
-        deliveryTime: new Date(),
-        deliveryDuration: body.totalSales ? Math.round(body.totalSales / 10) : 30,
-        orderMonth: new Date().toISOString().slice(0, 7),
-        orderHour: new Date().getHours(),
-        pizzaSize: 'Medium',
-        pizzaType: body.productName || 'Unknown',
-        toppingsCount: body.unitSold || 1,
-        pizzaComplexity: 1,
-        distanceKm: body.operatingProfit || 1,
-        trafficLevel: 'Normal',
-        trafficImpact: 0,
-        isPeakHour: false,
-        isWeekend: false,
-        paymentMethod: body.methodName || 'Cash',
-        paymentCategory: 'Cash',
-        estimatedDuration: body.pricePerUnit || 30,
-        deliveryEfficiency: body.operatingMargin || 0.8,
-        delayMin: 0,
-        isDelayed: false,
-        uploadedBy: userId
-      }
-    })
+    const { data, error } = await supabase
+      .from('transaction')
+      .insert([{
+        id_retailer: retailerId,
+        id_product: body.productId || 1,
+        id_method: body.methodId || 1,
+        id_city: body.cityId || 1,
+        invoice_date: body.invoiceDate || new Date().toISOString().split('T')[0],
+        price_per_unit: body.pricePerUnit || 0,
+        unit_sold: body.unitSold || 1,
+        total_sales: body.totalSales || 0,
+        operating_profit: body.operatingProfit || 0,
+        operating_margin: body.operatingMargin || 0
+      }])
+      .select()
+      .single()
 
-    return NextResponse.json(newOrder)
+    if (error) throw error
+
+    return NextResponse.json(data)
   } catch (error: any) {
     console.error('Create order error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
@@ -131,36 +126,26 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const userRestaurantId = (session.user as any)?.restaurantId
 
-    const existingOrder = await prisma.deliveryData.findUnique({
-      where: { id }
-    })
-
-    if (!existingOrder) {
-      return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 })
-    }
-
     const userRole = (session.user as any).role || (session.user as any).position
     const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
 
-    if (!isSuperAdmin && userRestaurantId && existingOrder.restaurantId !== userRestaurantId) {
-      return NextResponse.json({ error: 'Tidak berhak mengubah data retailer lain' }, { status: 403 })
-    }
+    const updateData: any = {}
+    if (body.pricePerUnit) updateData.price_per_unit = body.pricePerUnit
+    if (body.unitSold) updateData.unit_sold = body.unitSold
+    if (body.totalSales) updateData.total_sales = body.totalSales
+    if (body.operatingProfit) updateData.operating_profit = body.operatingProfit
+    if (body.operatingMargin) updateData.operating_margin = body.operatingMargin
 
-    const updatedOrder = await prisma.deliveryData.update({
-      where: { id },
-      data: {
-        location: body.cityName || existingOrder.location,
-        pizzaType: body.productName || existingOrder.pizzaType,
-        paymentMethod: body.methodName || existingOrder.paymentMethod,
-        deliveryDuration: body.totalSales ? Math.round(body.totalSales / 10) : existingOrder.deliveryDuration,
-        estimatedDuration: body.pricePerUnit ?? existingOrder.estimatedDuration,
-        toppingsCount: body.unitSold ?? existingOrder.toppingsCount,
-        distanceKm: body.operatingProfit ?? existingOrder.distanceKm,
-        deliveryEfficiency: body.operatingMargin ?? existingOrder.deliveryEfficiency
-      }
-    })
+    const { data, error } = await supabase
+      .from('transaction')
+      .update(updateData)
+      .eq('id_transaction', parseInt(id))
+      .select()
+      .single()
 
-    return NextResponse.json(updatedOrder)
+    if (error) throw error
+
+    return NextResponse.json(data)
   } catch (error: any) {
     console.error('Update order error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
@@ -182,26 +167,12 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Order ID diperlukan' }, { status: 400 })
     }
 
-    const userRestaurantId = (session.user as any)?.restaurantId
+    const { error } = await supabase
+      .from('transaction')
+      .delete()
+      .eq('id_transaction', parseInt(id))
 
-    const existingOrder = await prisma.deliveryData.findUnique({
-      where: { id }
-    })
-
-    if (!existingOrder) {
-      return NextResponse.json({ error: 'Order tidak ditemukan' }, { status: 404 })
-    }
-
-    const userRole = (session.user as any).role || (session.user as any).position
-    const isSuperAdmin = userRole === 'GM' || userRole === 'ADMIN_PUSAT'
-
-    if (!isSuperAdmin && userRestaurantId && existingOrder.restaurantId !== userRestaurantId) {
-      return NextResponse.json({ error: 'Tidak berhak menghapus data retailer lain' }, { status: 403 })
-    }
-
-    await prisma.deliveryData.delete({
-      where: { id }
-    })
+    if (error) throw error
 
     return NextResponse.json({ message: 'Order dihapus' })
   } catch (error: any) {

@@ -76,11 +76,40 @@ export function Sidebar({ className }: SidebarProps) {
   const isStaff = userRole === 'STAFF'
 
   const [showNotifications, setShowNotifications] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 1, title: 'Data Baru', message: 'Data penjualan Adidas bulan terbaru sudah tersedia', type: 'info', read: false, date: '2 jam lalu' },
-    { id: 2, title: 'Forecast Selesai', message: 'Hasil prediksi penjualan sudah siap dilihat', type: 'success', read: false, date: '5 jam lalu' },
-    { id: 3, title: 'Reminder', message: 'Jangan lupa upload data terbaru setiap minggu', type: 'warning', read: true, date: '1 hari lalu' },
-  ])
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
+
+  // Ambil notifikasi dari API
+  useEffect(() => {
+    if (session) {
+      fetchNotifications()
+    }
+  }, [session])
+
+  const fetchNotifications = async () => {
+    setIsLoadingNotifications(true)
+    try {
+      const res = await fetch('/api/notifications')
+      const data = await res.json()
+      if (data.notifications && data.notifications.length > 0) {
+        setNotifications(data.notifications)
+      } else {
+        // Default notifications jika belum ada chat
+        setNotifications([
+          { id: 1, title: 'Selamat Datang', message: 'Gunakan AI Assistant untuk mendapat insights', type: 'info', read: false, date: 'Baru saja' },
+          { id: 2, title: 'Tips', message: 'Klik pertanyaan sugestif di sidebar untuk memulai', type: 'info', read: true, date: '1 hari lalu' },
+        ])
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+      // Default notifications
+      setNotifications([
+        { id: 1, title: 'Selamat Datang', message: 'Gunakan AI Assistant untuk mendapat insights', type: 'info', read: false, date: 'Baru saja' },
+      ])
+    } finally {
+      setIsLoadingNotifications(false)
+    }
+  }
 
   const unreadCount = notifications.filter(n => !n.read).length
 

@@ -490,69 +490,6 @@ export default function UploadPage() {
         </CardContent>
       </Card>
 
-      {/* Kolom Data - Drill Down */}
-      <Card className="mt-4">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Struktur Data (Drill-down)</CardTitle>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setShowColumnDrilldown(!showColumnDrilldown)}
-            >
-              {showColumnDrilldown ? 'Sembunyikan' : 'Tampilkan'}
-            </Button>
-          </div>
-        </CardHeader>
-        {showColumnDrilldown && (
-          <CardContent>
-            <div className="mb-4">
-              <label className="text-sm font-medium text-gray-600 mb-2 block">Filter Kategori:</label>
-              <Select value={selectedColumnCategory} onValueChange={setSelectedColumnCategory}>
-                <SelectTrigger className="w-48"><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
-                <SelectContent>
-                  {COLUMN_CATEGORIES.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              {Object.entries(columnsByCategory).map(([category, cols]) => (
-                <div key={category} className="border rounded-lg overflow-hidden">
-                  <button
-                    onClick={() => toggleCategory(category)}
-                    className="w-full flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      {expandedCategories.includes(category) ? (
-                        <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4" />
-                      )}
-                      <span className="font-medium">{category}</span>
-                      <Badge variant="secondary">{cols.length} kolom</Badge>
-                    </div>
-                  </button>
-                  
-                  {expandedCategories.includes(category) && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-3 bg-white">
-                      {cols.map((col) => (
-                        <div key={col.name} className="bg-slate-50 p-3 rounded-lg">
-                          <p className="font-medium text-sm">{col.name}</p>
-                          <p className="text-xs text-gray-500">{col.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        )}
-      </Card>
-
       {/* Upload Log */}
       <Card className="mt-4">
         <CardHeader>

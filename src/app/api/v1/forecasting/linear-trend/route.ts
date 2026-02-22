@@ -21,24 +21,29 @@ function parseCSV(csvText: string): any[] {
   return data
 }
 
-function linearTrend(data: number[], periods: number = 7): number[] {
+function holtWinters(data: number[], alpha: number = 0.3, beta: number = 0.1, periods: number = 7): number[] {
   const n = data.length
   if (n < 2) return Array(periods).fill(data[0] || 0)
   
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
+  // Initialize level and trend
+  let level = data[0]
+  let trend = n > 1 ? data[1] - data[0] : 0
+  
+  // Holt's linear (without damping as base)
+  const forecasts: number[] = []
+  
+  // Calculate smoothed values
   for (let i = 0; i < n; i++) {
-    sumX += i
-    sumY += data[i]
-    sumXY += i * data[i]
-    sumX2 += i * i
+    const prevLevel = level
+    const prevTrend = trend
+    
+    level = alpha * data[i] + (1 - alpha) * (prevLevel + prevTrend)
+    trend = beta * (level - prevLevel) + (1 - beta) * prevTrend
   }
   
-  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
-  const intercept = (sumY - slope * sumX) / n
-  
-  const forecasts: number[] = []
-  for (let i = 0; i < periods; i++) {
-    forecasts.push(slope * (n + i) + intercept)
+  // Generate forecasts
+  for (let h = 1; h <= periods; h++) {
+    forecasts.push(level + h * trend)
   }
   
   return forecasts
@@ -121,28 +126,29 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const forecast = linearTrend(timeSeriesData, periods)
+    // Holt-Winters (Holt's Linear Trend)
+    const forecast = holtWinters(timeSeriesData, 0.3, 0.1, periods)
 
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0
-    const n = timeSeriesData.length
-    for (let i = 0; i < n; i++) {
-      sumX += i
-      sumY += timeSeriesData[i]
-      sumXY += i * timeSeriesData[i]
-      sumX2 += i * i
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
-    const intercept = (sumY - slope * sumX) / n
-
-    const historical = sortedDates.map((date, i) => ({
-      date,
-      actual: timeSeriesData[i],
-      forecast: slope * i + intercept
-    }))
+    // Calculate level and trend for historical fit
+    let level = timeSeriesData[0]
+    let trend = timeSeriesData.length > 1 ? timeSeriesData[1] - timeSeriesData[0] : 0
+    
+    const historical = sortedDates.map((date, i) => {
+      let fitted = level + i * trend
+      const prevLevel = level
+      const prevTrend = trend
+      level = 0.3 * timeSeriesData[i] + 0.7 * (prevLevel + prevTrend)
+      trend = 0.1 * (level - prevLevel) + 0.9 * prevTrend
+      return {
+        date,
+        actual: timeSeriesData[i],
+        forecast: fitted
+      }
+    })
 
     return NextResponse.json({
       success: true,
-      method: 'Linear Trend',
+      method: 'Holt-Winters (Linear Trend)',
       historical,
       forecast,
       periods,

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
-import bcrypt from 'bcryptjs'
+import { supabase } from '@/lib/supabase'
+import crypto from 'crypto'
 
 // GET - List all users (Admin/GM only)
 export async function GET(req: NextRequest) {
@@ -23,34 +23,40 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const restaurantId = searchParams.get('restaurantId')
 
-    const whereClause = restaurantId ? { restaurantId } : {}
+    let query = supabase
+      .from('app_users')
+      .select(`
+        *,
+        retailer(retailer_name)
+      `)
+      .order('created_at', { ascending: false })
 
-    const users = await prisma.user.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        position: true,
-        isActive: true,
-        createdAt: true,
-        lastLogin: true,
-        restaurantId: true,
-        restaurant: {
-          select: {
-            id: true,
-            name: true,
-            code: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
+    if (restaurantId) {
+      query = query.eq('restaurant_id', parseInt(restaurantId))
+    }
 
-    return NextResponse.json({ users })
+    const { data: users, error } = await query
+
+    if (error) throw error
+
+    const formattedUsers = (users || []).map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      position: u.position,
+      isActive: u.is_active,
+      createdAt: u.created_at,
+      lastLogin: u.last_login,
+      restaurantId: u.restaurant_id,
+      restaurant: u.retailer ? {
+        id: u.restaurant_id,
+        name: u.retailer.retailer_name,
+        code: u.retailer.retailer_name.substring(0, 3).toUpperCase()
+      } : null
+    }))
+
+    return NextResponse.json({ users: formattedUsers })
   } catch (error) {
     console.error('Error fetching users:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -76,54 +82,47 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { email, name, password, role, position, restaurantId, isActive } = body
 
-    // Validate required fields
     if (!email || !name || !password || !role) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Check if email already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    // Hash password with MD5 (matching the verify function)
+    const hashedPassword = crypto.createHash('md5').update(password).digest('hex')
 
-    if (existingUser) {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    // Create user
-    const newUser = await prisma.user.create({
-      data: {
+    const { data, error } = await supabase
+      .from('app_users')
+      .insert([{
         email,
         name,
         password: hashedPassword,
         role,
         position: position || role,
-        restaurantId: restaurantId || null,
-        isActive: isActive !== undefined ? isActive : true
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        position: true,
-        isActive: true,
-        createdAt: true,
-        restaurantId: true,
-        restaurant: {
-          select: {
-            id: true,
-            name: true,
-            code: true
-          }
-        }
-      }
-    })
+        restaurant_id: restaurantId ? parseInt(restaurantId) : null,
+        is_active: isActive !== undefined ? isActive : true
+      }])
+      .select(`
+        *,
+        retailer(retailer_name)
+      `)
+      .single()
 
-    return NextResponse.json(newUser, { status: 201 })
+    if (error) throw error
+
+    return NextResponse.json({
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role,
+      position: data.position,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      restaurantId: data.restaurant_id,
+      restaurant: data.retailer ? {
+        id: data.restaurant_id,
+        name: data.retailer.retailer_name,
+        code: data.retailer.retailer_name.substring(0, 3).toUpperCase()
+      } : null
+    }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -156,16 +155,6 @@ export async function PUT(req: NextRequest) {
     const body = await req.json()
     const { email, name, password, role, position, restaurantId, isActive } = body
 
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id: userId }
-    })
-
-    if (!existingUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // Prepare update data
     const updateData: any = {}
     if (email) updateData.email = email
     if (name) updateData.name = name
@@ -173,39 +162,41 @@ export async function PUT(req: NextRequest) {
       updateData.role = role
       updateData.position = position || role
     }
-    if (restaurantId !== undefined) updateData.restaurantId = restaurantId
-    if (isActive !== undefined) updateData.isActive = isActive
+    if (restaurantId !== undefined) updateData.restaurant_id = restaurantId ? parseInt(restaurantId) : null
+    if (isActive !== undefined) updateData.is_active = isActive
     
-    // Only update password if provided
     if (password && password.length > 0) {
-      updateData.password = await bcrypt.hash(password, 10)
+      updateData.password = crypto.createHash('md5').update(password).digest('hex')
     }
 
-    // Update user
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        position: true,
-        isActive: true,
-        createdAt: true,
-        lastLogin: true,
-        restaurantId: true,
-        restaurant: {
-          select: {
-            id: true,
-            name: true,
-            code: true
-          }
-        }
-      }
-    })
+    const { data, error } = await supabase
+      .from('app_users')
+      .update(updateData)
+      .eq('id', userId)
+      .select(`
+        *,
+        retailer(retailer_name)
+      `)
+      .single()
 
-    return NextResponse.json(updatedUser)
+    if (error) throw error
+
+    return NextResponse.json({
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role,
+      position: data.position,
+      isActive: data.is_active,
+      createdAt: data.created_at,
+      lastLogin: data.last_login,
+      restaurantId: data.restaurant_id,
+      restaurant: data.retailer ? {
+        id: data.restaurant_id,
+        name: data.retailer.retailer_name,
+        code: data.retailer.retailer_name.substring(0, 3).toUpperCase()
+      } : null
+    })
   } catch (error) {
     console.error('Error updating user:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -241,19 +232,12 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Cannot delete your own account' }, { status: 400 })
     }
 
-    // Check if user exists
-    const existingUser = await prisma.user.findUnique({
-      where: { id: userId }
-    })
+    const { error } = await supabase
+      .from('app_users')
+      .delete()
+      .eq('id', userId)
 
-    if (!existingUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-
-    // Delete user
-    await prisma.user.delete({
-      where: { id: userId }
-    })
+    if (error) throw error
 
     return NextResponse.json({ message: 'User deleted successfully' })
   } catch (error) {

@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = session.user?.email || 'unknown'
+    const userName = (session.user as any)?.name || session.user?.email || 'Unknown'
+    const userRole = (session.user as any)?.role || (session.user as any)?.position || 'STAFF'
+    const userRestaurantId = (session.user as any)?.restaurantId || null
 
     // Get master data IDs from Supabase
     const { data: retailers } = await supabase.from('retailer').select('id_retailer, retailer_name')
@@ -82,15 +85,16 @@ export async function POST(req: NextRequest) {
       return found?.id_city || null
     }
 
-    // Create upload history
+    // Create upload history with full user tracking
     const { data: uploadRecord } = await supabase
       .from('upload_history')
       .insert([{
         file_name: 'uploaded_file.xlsx',
         system_name: 'adidas_sales',
         status: 'processing',
+        note: `Uploaded by ${userName} (${userRole})${userRestaurantId ? ' - Retailer ID: ' + userRestaurantId : ''}`,
         total_rows: cleanedData.length,
-        uploaded_by: userId,
+        uploaded_by: `${userName} (${userId})`,
         uploaded_date: new Date().toISOString()
       }])
       .select()

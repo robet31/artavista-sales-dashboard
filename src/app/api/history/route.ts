@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { prisma } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,17 +16,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const history = await prisma.auditLog.findMany({
-      take: 50,
-      orderBy: { timestamp: 'desc' },
-      include: {
-        user: {
-          select: { name: true, email: true }
-        }
-      }
-    })
-
-    return NextResponse.json(history)
+    // Return empty for now - audit logs not implemented in Supabase
+    return NextResponse.json([])
 
   } catch (error) {
     console.error('History error:', error)

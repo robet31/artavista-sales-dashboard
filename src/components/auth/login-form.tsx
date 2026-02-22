@@ -116,7 +116,7 @@ export function LoginForm() {
         
         <div className="hidden md:flex flex-col w-[45%] relative">
           <img 
-            src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?q=80&w=2070&auto=format&fit=crop" 
+            src="https://images.unsplash.com/photo-1556906781-9a412961c28c?q=80&w=2070&auto=format&fit=crop" 
             alt="Artavista" 
             className="absolute inset-0 w-full h-full object-cover"
           />
@@ -125,11 +125,12 @@ export function LoginForm() {
           <div className="relative z-10 flex flex-col items-center justify-center h-full text-white p-10 text-center">
             <div className="flex flex-col items-center justify-center">
                <img 
-                 src="/Logo Artavista.png" 
-                 alt="Artavista" 
-                 className="w-72 h-auto mb-6 object-contain"
-               />
-               <p className="text-sm font-medium tracking-widest opacity-90">Sales Monitoring By Artavista Systems</p>
+                src="../Logo Artavista.png" 
+                alt="Artavista Logo" 
+                className="w-40 h-auto mb-6 object-contain"
+              />
+               <h1 className="text-5xl font-black mb-6 tracking-tight">ARTAVISTA</h1>
+               <p className="text-sm font-medium tracking-widest opacity-90">Sales Monitoring Dashboard</p>
             </div>
             
             

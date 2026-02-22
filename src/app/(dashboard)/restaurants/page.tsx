@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Edit2, Trash2, MapPin, Building2, AlertCircle, Eye, X, UserPlus, UserMinus } from 'lucide-react'
 import { Restaurant, User } from '@/types'
-import { prisma } from '@/lib/db'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -40,12 +39,22 @@ export default function RestaurantsPage() {
     setError(null)
     try {
       const res = await fetch('/api/restaurants')
-      if (!res.ok) throw new Error('Failed to fetch')
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || 'Failed to fetch retailers')
+      }
+      
       const data = await res.json()
       setRestaurants(data.restaurants || [])
-    } catch (err) {
+      
+      // Jika array kosong, tidak perlu error - cukup info
+      if (!data.restaurants || data.restaurants.length === 0) {
+        console.log('No retailers found - this is OK if first time setup')
+      }
+    } catch (err: any) {
       console.error('Error fetching retailers:', err)
-      setError('Terjadi kesalahan saat mengambil data. Silakan coba lagi.')
+      setError(err.message || 'Terjadi kesalahan saat mengambil data. Silakan coba lagi.')
     } finally {
       setIsLoading(false)
     }
@@ -124,7 +133,7 @@ export default function RestaurantsPage() {
   }
 
   const handleDelete = async (restaurantId: string) => {
-    if (!confirm('Apakah Anda yakin ingin menghapus restoran ini?')) {
+    if (!confirm('Apakah Anda yakin ingin menghapus retailer ini?')) {
       return
     }
 
@@ -134,13 +143,13 @@ export default function RestaurantsPage() {
       })
 
       if (!res.ok) {
-        throw new Error('Gagal menghapus restoran')
+        throw new Error('Gagal menghapus retailer')
       }
 
       setRestaurants(restaurants.filter((r) => r.id !== restaurantId))
     } catch (err) {
       console.error('Error deleting restaurant:', err)
-      alert('Gagal menghapus restoran. Silakan coba lagi.')
+      alert('Gagal menghapus retailer. Silakan coba lagi.')
     }
   }
 
@@ -152,6 +161,58 @@ export default function RestaurantsPage() {
   const handleEdit = (restaurant: Restaurant) => {
     setEditingRestaurant(restaurant)
     setIsAddModalOpen(true)
+  }
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const formData = new FormData(e.target as HTMLFormElement)
+    const name = formData.get('name') as string
+    const location = formData.get('location') as string
+    const description = formData.get('description') as string
+    const isActive = (formData.get('isActive') as string) === 'true'
+
+    if (!name) {
+      alert('Nama retailer wajib diisi')
+      return
+    }
+
+    try {
+      let res
+      if (editingRestaurant) {
+        // Update
+        res = await fetch(`/api/restaurants`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingRestaurant.id,
+            name,
+            location,
+            description,
+            isActive
+          })
+        })
+      } else {
+        // Create
+        res = await fetch('/api/restaurants', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, location, description })
+        })
+      }
+
+      if (res.ok) {
+        alert(editingRestaurant ? 'Retailer berhasil diperbarui!' : 'Retailer berhasil ditambahkan!')
+        setIsAddModalOpen(false)
+        fetchRestaurants()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Gagal menyimpan retailer')
+      }
+    } catch (err) {
+      console.error('Error saving retailer:', err)
+      alert('Gagal menyimpan retailer')
+    }
   }
 
   // Check if user has access
@@ -182,10 +243,10 @@ export default function RestaurantsPage() {
             className="text-2xl font-bold"
             style={{ color: 'var(--foreground)' }}
           >
-            Manajemen Restoran
+            Manajamen Retailer
           </h1>
           <p style={{ color: 'var(--muted-foreground)' }}>
-            Kelola data restoran Anda
+            Kelola data retailer Anda
           </p>
         </div>
         <Button 
@@ -197,7 +258,7 @@ export default function RestaurantsPage() {
           }}
         >
           <Plus className="mr-2 h-4 w-4" />
-          Tambah Restoran
+          Tambah Retailer
         </Button>
       </div>
 
@@ -245,7 +306,7 @@ export default function RestaurantsPage() {
               style={{ color: 'var(--muted-foreground)' }}
             />
             <p style={{ color: 'var(--muted-foreground)' }} className="mb-4">
-              Belum ada data restoran.
+              Belum ada data retailer.
             </p>
             <Button 
               onClick={handleAdd}
@@ -254,7 +315,7 @@ export default function RestaurantsPage() {
                 color: 'var(--primary-foreground)'
               }}
             >
-              Tambah Restoran Pertama
+              Tambah Retailer Pertama
             </Button>
           </CardContent>
         </Card>
@@ -265,7 +326,7 @@ export default function RestaurantsPage() {
         <Card style={{ backgroundColor: 'var(--card)' }}>
           <CardHeader>
             <CardTitle style={{ color: 'var(--card-foreground)' }}>
-              Daftar Restoran
+              Daftar Retailer
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -277,7 +338,7 @@ export default function RestaurantsPage() {
                       className="text-left py-3 px-4 font-semibold"
                       style={{ color: 'var(--foreground)' }}
                     >
-                      Nama Restoran
+                      Nama Retailer
                     </th>
                     <th 
                       className="text-left py-3 px-4 font-semibold"
@@ -423,34 +484,78 @@ export default function RestaurantsPage() {
           >
             <CardHeader>
               <CardTitle style={{ color: 'var(--card-foreground)' }}>
-                {editingRestaurant ? 'Edit Restoran' : 'Tambah Restoran Baru'}
+                {editingRestaurant ? 'Edit Retailer' : 'Tambah Retailer Baru'}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p style={{ color: 'var(--muted-foreground)' }} className="text-sm">
-                Form akan diimplementasikan di sini.
-              </p>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setIsAddModalOpen(false)}
-                  style={{ 
-                    borderColor: 'var(--border)',
-                    color: 'var(--foreground)'
-                  }}
-                >
-                  Batal
-                </Button>
-                <Button 
-                  onClick={() => setIsAddModalOpen(false)}
-                  style={{ 
-                    backgroundColor: 'var(--primary)',
-                    color: 'var(--primary-foreground)'
-                  }}
-                >
-                  Simpan
-                </Button>
-              </div>
+            <CardContent>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                  <Label htmlFor="name" className="text-sm font-medium">Nama Retailer *</Label>
+                  <Input 
+                    id="name"
+                    name="name"
+                    defaultValue={editingRestaurant?.name || ''}
+                    placeholder="Contoh: Adidas Jakarta Selatan"
+                    required
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="location" className="text-sm font-medium">Lokasi</Label>
+                  <Input 
+                    id="location"
+                    name="location"
+                    defaultValue={editingRestaurant?.location || ''}
+                    placeholder="Contoh: Jakarta, Indonesia"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="description" className="text-sm font-medium">Deskripsi</Label>
+                  <Input 
+                    id="description"
+                    name="description"
+                    defaultValue={editingRestaurant?.description || ''}
+                    placeholder="Deskripsi singkat retailer"
+                    className="mt-1"
+                  />
+                </div>
+                {editingRestaurant && (
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="isActive" 
+                      name="isActive" 
+                      value="true"
+                      defaultChecked={editingRestaurant.isActive !== false}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="isActive" className="text-sm font-normal">Retailer Aktif</Label>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsAddModalOpen(false)}
+                    style={{ 
+                      borderColor: 'var(--border)',
+                      color: 'var(--foreground)'
+                    }}
+                  >
+                    Batal
+                  </Button>
+                  <Button 
+                    type="submit"
+                    style={{ 
+                      backgroundColor: 'var(--primary)',
+                      color: 'var(--primary-foreground)'
+                    }}
+                  >
+                    Simpan
+                  </Button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>
@@ -472,7 +577,7 @@ export default function RestaurantsPage() {
                   Kelola User - {selectedRestaurant.name}
                 </CardTitle>
                 <p style={{ color: 'var(--muted-foreground)' }} className="text-sm mt-1">
-                  Tambah, hapus, atau ubah role user untuk restoran ini
+                  Tambah, hapus, atau ubah role user untuk retailer ini
                 </p>
               </div>
               <Button
@@ -546,7 +651,7 @@ export default function RestaurantsPage() {
                 <h4 className="font-semibold mb-3">Daftar User ({restaurantUsers.length})</h4>
                 {restaurantUsers.length === 0 ? (
                   <p style={{ color: 'var(--muted-foreground)' }} className="text-sm">
-                    Belum ada user untuk restoran ini.
+                    Belum ada user untuk retailer ini.
                   </p>
                 ) : (
                   <div className="space-y-2">

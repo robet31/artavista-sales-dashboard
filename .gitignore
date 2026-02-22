@@ -26,6 +26,8 @@ pnpm-debug.log*
 # Local env files
 .env
 .env*.local
+backend-fastapi/.env
+backend-fastapi/.env.local
 
 # Vercel
 .vercel
@@ -33,11 +35,6 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
-
-# Prisma
-prisma/dev.db
-prisma/*.db
-prisma/*.db-journal
 
 # Python
 __pycache__/
@@ -51,6 +48,8 @@ venv/
 *.egg-info/
 dist/
 build/
+backend-fastapi/__pycache__/
+backend-fastapi/**/__pycache__/
 
 # IDE
 .idea/

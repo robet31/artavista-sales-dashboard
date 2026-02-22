@@ -158,6 +158,8 @@ export default function RecommendationPage() {
     setError('')
     setQuery('')
 
+    let aiAnswer = ''
+
     try {
       const response = await fetch('/api/v1/rag', {
         method: 'POST',
@@ -173,6 +175,7 @@ export default function RecommendationPage() {
         const data = await response.json()
 
         if (data.answer) {
+          aiAnswer = data.answer
           const aiMessage: ChatMessage = {
             id: (Date.now() + 1).toString(),
             type: 'ai',
@@ -180,6 +183,21 @@ export default function RecommendationPage() {
             timestamp: new Date()
           }
           setMessages(prev => [...prev, aiMessage])
+          
+          // Simpan chat ke database untuk notifikasi
+          try {
+            await fetch('/api/chat/history', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                question: userMessage.content,
+                answer: data.answer,
+                type: 'recommendation'
+              })
+            })
+          } catch (saveErr) {
+            console.error('Error saving chat:', saveErr)
+          }
         } else if (data.error) {
           throw new Error(data.error + (data.debug ? `\n\nDebug: ${JSON.stringify(data.debug, null, 2)}` : ''))
         } else if (data.debug && data.debug.summaryCount === 0) {
@@ -233,7 +251,7 @@ export default function RecommendationPage() {
                 AI Assistant
               </h1>
               <p className="text-xs md:text-base mt-1" style={{ color: 'rgba(255,255,255,0.8)' }}>
-                Adidas Sales Insights - Analytics & Recommendation
+                Artavista Sales Insights - Analytics & Recommendation
               </p>
             </div>
             <Badge variant="secondary" className="ml-auto bg-white/20 text-white hover:bg-white/30">

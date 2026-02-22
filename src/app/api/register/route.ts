@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
-import bcrypt from 'bcryptjs'
+import { supabase } from '@/lib/supabase'
+import crypto from 'crypto'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { name, email, password, position } = body
+    const { name, email, password, position, restaurantId } = body
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -14,37 +14,40 @@ export async function POST(request: Request) {
       )
     }
 
-    const validPositions = ['MANAGER', 'ASISTEN_MANAGER', 'STAFF']
+    const validPositions = ['MANAGER', 'REGIONAL_MANAGER', 'STAFF']
     const userPosition = validPositions.includes(position) ? position : 'STAFF'
-    const userRole = position === 'MANAGER' ? 'MANAGER' : (position === 'ASISTEN_MANAGER' ? 'ASISTEN_MANAGER' : 'STAFF')
+    const userRole = position === 'MANAGER' ? 'REGIONAL_MANAGER' : (position === 'REGIONAL_MANAGER' ? 'REGIONAL_MANAGER' : 'STAFF')
 
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    // Hash password with MD5
+    const hashedPassword = crypto.createHash('md5').update(password).digest('hex')
 
-    if (existingUser) {
-      return NextResponse.json(
-        { error: 'Email sudah terdaftar' },
-        { status: 400 }
-      )
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10)
-
-    const user = await prisma.user.create({
-      data: {
+    const { data, error } = await supabase
+      .from('app_users')
+      .insert([{
         name,
         email,
         password: hashedPassword,
         role: userRole,
         position: userPosition,
-        isActive: true
+        restaurant_id: restaurantId ? parseInt(restaurantId) : null,
+        is_active: true
+      }])
+      .select()
+      .single()
+
+    if (error) {
+      if (error.message.includes('unique')) {
+        return NextResponse.json(
+          { error: 'Email sudah terdaftar' },
+          { status: 400 }
+        )
       }
-    })
+      throw error
+    }
 
     return NextResponse.json({
       message: 'Registrasi berhasil',
-      user: { id: user.id, name: user.name, email: user.email, position: user.position }
+      user: { id: data.id, name: data.name, email: data.email, position: data.position }
     })
   } catch (error: any) {
     console.error('Register error:', error)

@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: logs, error } = await supabase
       .from('upload_history')
-      .select('id_upload, file_name, system_name, status, note, total_rows, uploaded_by, uploaded_date')
+      .select('*')
       .order('uploaded_date', { ascending: false })
       .limit(50)
 
@@ -18,9 +18,29 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // Format logs for better display
+    const formattedLogs = (logs || []).map(log => ({
+      id: log.id_upload,
+      fileName: log.file_name,
+      systemName: log.system_name,
+      status: log.status,
+      note: log.note,
+      totalRows: log.total_rows,
+      uploadedBy: log.uploaded_by,
+      uploadedDate: log.uploaded_date,
+      formattedDate: new Date(log.uploaded_date).toLocaleString('id-ID', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }))
+
     return NextResponse.json({
       success: true,
-      logs: logs || []
+      logs: formattedLogs
     })
   } catch (error: any) {
     console.error('Upload history error:', error)

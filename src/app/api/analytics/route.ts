@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const getFilterOptions = searchParams.get('getFilterOptions') === 'true'
+    const restaurantId = searchParams.get('restaurantId')
     const filterMonth = searchParams.get('month')
     const filterProduct = searchParams.get('pizzaSize')
     const filterType = searchParams.get('pizzaType')
@@ -30,11 +31,17 @@ export async function GET(req: NextRequest) {
       `)
 
     // Apply filters if provided
+    if (restaurantId && restaurantId !== 'all' && !isNaN(parseInt(restaurantId))) {
+      query = query.eq('id_retailer', parseInt(restaurantId))
+    }
     if (filterMonth && filterMonth !== 'all') {
       query = query.like('invoice_date', `${filterMonth}%`)
     }
     if (filterProduct && filterProduct !== 'all') {
       query = query.eq('product.product', filterProduct)
+    }
+    if (filterType && filterType !== 'all') {
+      query = query.eq('city.city', filterType)
     }
     if (filterMethod && filterMethod !== 'all') {
       query = query.eq('method.method', filterMethod)
@@ -130,9 +137,10 @@ export async function GET(req: NextRequest) {
     const months = [...monthMap.keys()].sort()
     const products = [...productMap.keys()].sort()
     const methods = [...methodMap.keys()].sort()
+    const cities = [...cityMap.keys()].sort()
 
     // Also get pizzaTypes (product category if available)
-    const pizzaTypes = products
+    const pizzaTypes = cities
 
     if (getFilterOptions) {
       return NextResponse.json({
