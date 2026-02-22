@@ -11,7 +11,11 @@ const openSans = Open_Sans({
 
 export const metadata: Metadata = {
   title: "Artavista - Sales Dashboard",
-  description: "Monitor and analyze sales data from Adidas retail",
+  description: "Monitor and analyze sales data from Artavista retail",
+  icons: {
+    icon: "/Logo Sunest Solutions.png",
+    apple: "/Logo Sunest Solutions.png",
+  },
 };
 
 export default function RootLayout({
