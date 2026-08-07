@@ -1,1 +1,1 @@
-refactor: clean up redundant logic in handler - 2026-08-07
+fix: resolve undefined variable on session - 2026-08-07
