@@ -1,1 +1,1 @@
-fix: resolve race condition on async - 2026-09-05
+fix: patch memory leak on long process - 2026-09-07
