@@ -1,1 +1,1 @@
-fix: sanitize input to prevent injection - 2026-09-25
+fix: patch memory leak on long process - 2026-09-27
